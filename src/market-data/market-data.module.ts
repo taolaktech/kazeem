@@ -2,11 +2,12 @@ import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { massiveConfig } from './market-data.config.js';
 import { MarketDataService } from './market-data.service.js';
+import { MassiveHttpClient } from './massive-http.client.js';
 import { MassiveService } from './massive.service.js';
 
 @Module({
   imports: [ConfigModule.forFeature(massiveConfig)],
-  providers: [MassiveService, MarketDataService],
-  exports: [MarketDataService],
+  providers: [MassiveHttpClient, MassiveService, MarketDataService],
+  exports: [MarketDataService, MassiveHttpClient],
 })
 export class MarketDataModule {}

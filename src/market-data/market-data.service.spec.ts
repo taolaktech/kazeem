@@ -6,6 +6,7 @@ import {
   type MassiveConfig,
 } from './market-data.config.js';
 import { MarketDataService } from './market-data.service.js';
+import { MassiveHttpClient } from './massive-http.client.js';
 import { MassiveService } from './massive.service.js';
 import type { MassiveAggregate } from './massive.types.js';
 
@@ -53,6 +54,7 @@ describe('MarketDataService', () => {
 
     const moduleRef: TestingModule = await Test.createTestingModule({
       providers: [
+        MassiveHttpClient,
         MassiveService,
         MarketDataService,
         {
