@@ -80,6 +80,15 @@ export class MarketDataService {
     return recent;
   }
 
+  /**
+   * Latest traded price for `symbol`, taken from the close of the most recent
+   * 1-minute candle. Subject to the same session filtering as candle fetches.
+   */
+  async getLatestPrice(symbol: string): Promise<number> {
+    const [candle] = await this.getRecentMinuteCandles(symbol, 1);
+    return candle.close;
+  }
+
   private lookbackDaysFor(count: number): number {
     const tradingDays = Math.ceil(Math.max(count, 1) / CANDLES_PER_TRADING_DAY);
     const days =

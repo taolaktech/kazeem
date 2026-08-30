@@ -1,23 +1,12 @@
-import {
-  BadGatewayException,
-  HttpException,
-  HttpStatus,
-  Injectable,
-  Logger,
-  ServiceUnavailableException,
-  type OnModuleInit,
-} from '@nestjs/common';
-import { ConfigService } from '@nestjs/config';
+import { BadGatewayException, Injectable, Logger } from '@nestjs/common';
 import { normalizeAggregates } from './candle-normalizer.js';
 import type {
   HistoricalCandlesOptions,
   MarketCandle,
   MarketDataProvider,
 } from './interfaces/market-candle.interface.js';
-import {
-  MASSIVE_CONFIG_KEY,
-  type MassiveConfig,
-} from './market-data.config.js';
+import { MassiveHttpClient } from './massive-http.client.js';
+import type { MassiveConfig } from './market-data.config.js';
 import {
   isMassiveAggregatesResponse,
   type MassiveAggregate,
@@ -33,20 +22,12 @@ const MASSIVE_PAGE_LIMIT = 50_000;
  * receive canonical {@link MarketCandle} values.
  */
 @Injectable()
-export class MassiveService implements MarketDataProvider, OnModuleInit {
+export class MassiveService implements MarketDataProvider {
   private readonly logger = new Logger(MassiveService.name);
   private readonly config: MassiveConfig;
 
-  constructor(configService: ConfigService) {
-    this.config = configService.getOrThrow<MassiveConfig>(MASSIVE_CONFIG_KEY);
-  }
-
-  onModuleInit(): void {
-    if (!this.config.apiKey) {
-      this.logger.error(
-        'MASSIVE_API_KEY is not set; market data requests will fail until it is configured.',
-      );
-    }
+  constructor(private readonly http: MassiveHttpClient) {
+    this.config = http.config;
   }
 
   async getHistoricalCandles(
@@ -110,36 +91,7 @@ export class MassiveService implements MarketDataProvider, OnModuleInit {
     url: string,
     symbol: string,
   ): Promise<MassiveAggregatesResponse> {
-    if (!this.config.apiKey) {
-      throw new ServiceUnavailableException(
-        'Market data provider is not configured.',
-      );
-    }
-
-    let response: Response;
-    try {
-      response = await fetch(url, {
-        headers: {
-          Authorization: `Bearer ${this.config.apiKey}`,
-          Accept: 'application/json',
-        },
-        signal: AbortSignal.timeout(this.config.requestTimeoutMs),
-      });
-    } catch (error) {
-      const reason = error instanceof Error ? error.name : 'UnknownError';
-      this.logger.error(
-        `Market data request for ${symbol} failed before a response was received (${reason})`,
-      );
-      throw new ServiceUnavailableException(
-        'Market data provider is unreachable. Please retry shortly.',
-      );
-    }
-
-    if (!response.ok) {
-      throw this.toHttpException(response.status, symbol);
-    }
-
-    const body: unknown = await response.json().catch(() => undefined);
+    const body = await this.http.getJson(url, symbol);
     if (!isMassiveAggregatesResponse(body)) {
       this.logger.error(
         `Market data provider returned a malformed payload for ${symbol}`,
@@ -149,37 +101,5 @@ export class MassiveService implements MarketDataProvider, OnModuleInit {
       );
     }
     return body;
-  }
-
-  private toHttpException(status: number, symbol: string): HttpException {
-    if (status === HttpStatus.UNAUTHORIZED || status === HttpStatus.FORBIDDEN) {
-      this.logger.error(
-        `Market data provider rejected the configured credentials (HTTP ${status}) while fetching ${symbol}`,
-      );
-      return new ServiceUnavailableException(
-        'Market data provider credentials are invalid or lack access to this data.',
-      );
-    }
-    if (status === HttpStatus.TOO_MANY_REQUESTS) {
-      this.logger.warn(
-        `Market data provider rate limited request for ${symbol}`,
-      );
-      return new HttpException(
-        'Market data provider rate limit exceeded. Please retry shortly.',
-        HttpStatus.TOO_MANY_REQUESTS,
-      );
-    }
-    if (status >= 500) {
-      this.logger.error(
-        `Market data provider returned HTTP ${status} for ${symbol}`,
-      );
-      return new BadGatewayException(
-        'Market data provider is currently failing. Please retry shortly.',
-      );
-    }
-    this.logger.error(
-      `Market data request for ${symbol} failed with HTTP ${status}`,
-    );
-    return new BadGatewayException('Market data request failed.');
   }
 }
