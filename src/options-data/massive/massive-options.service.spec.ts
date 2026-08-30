@@ -217,6 +217,22 @@ describe('MassiveOptionsService', () => {
     expect(contract.impliedVolatility).toBeNull();
   });
 
+  it('falls back to the session close when the plan omits quotes and trades', async () => {
+    const withoutQuotes = snapshot();
+    delete withoutQuotes.last_quote;
+    delete withoutQuotes.last_trade;
+    withoutQuotes.day = { close: 4.75, volume: 5_654 };
+    fetchMock.mockResolvedValue(jsonResponse({ results: [withoutQuotes] }));
+
+    const [contract] = (await service.getOptionChain('SPY')).contracts;
+
+    expect(contract.bid).toBeNull();
+    expect(contract.ask).toBeNull();
+    expect(contract.midpoint).toBeNull();
+    expect(contract.lastPrice).toBe(4.75);
+    expect(contract.volume).toBe(5_654);
+  });
+
   it('rejects malformed contracts individually and reports warnings', async () => {
     fetchMock.mockResolvedValue(
       jsonResponse({

@@ -25,6 +25,7 @@ export interface OptionContract {
   daysToExpiration: number;
   bid: number | null;
   ask: number | null;
+  /** Last trade price, falling back to the session close when the provider plan omits trades. */
   lastPrice: number | null;
   /** `(bid + ask) / 2`, only when both sides of the quote are valid. */
   midpoint: number | null;

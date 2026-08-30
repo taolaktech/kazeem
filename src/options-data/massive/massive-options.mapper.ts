@@ -88,7 +88,8 @@ export function normalizeOptionSnapshot(
     daysToExpiration: dte,
     bid: quote.bid,
     ask: quote.ask,
-    lastPrice: toPrice(snapshot.last_trade?.price),
+    lastPrice:
+      toPrice(snapshot.last_trade?.price) ?? toPrice(snapshot.day?.close),
     midpoint,
     bidAskSpread,
     bidAskSpreadPercent,
