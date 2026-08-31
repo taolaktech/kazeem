@@ -57,10 +57,16 @@ function attainableSessionEvidence(
   if (evidence === undefined) {
     return 0;
   }
-  if (regime === MarketRegime.TRENDING_BULLISH) {
-    return evidence.bullish;
+  switch (regime) {
+    case MarketRegime.TRENDING_BULLISH:
+      return evidence.bullish;
+    case MarketRegime.TRENDING_BEARISH:
+      return evidence.bearish;
+    case MarketRegime.RANGE_BOUND:
+      return evidence.rangeBound;
+    default:
+      return 0;
   }
-  return regime === MarketRegime.TRENDING_BEARISH ? evidence.bearish : 0;
 }
 
 /** Deterministic, rule-based market regime classifier (version 1, no ML). */
@@ -195,6 +201,7 @@ export class RegimeService implements RegimeClassifier {
       },
       sessionContext: session.context,
       premarketContext: session.premarket,
+      openingRange: session.openingRange,
       previousSessionContext: session.previousSession,
       currentSessionFeatures: session.currentSessionFeatures,
       tradeEvaluationAllowed: session.context.tradeEvaluationAllowed,

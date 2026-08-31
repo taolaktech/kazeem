@@ -17,6 +17,9 @@ import {
   RSI_OVERSOLD,
 } from './constants/signal-thresholds.js';
 
+/** Completed closes beyond a boundary that count as a sustained break. */
+const SUSTAINED_OPENING_RANGE_CLOSES = 2;
+
 /** One piece of weighted evidence, with the wording it contributes. */
 export interface SignalFactor {
   bullish?: number;
@@ -46,6 +49,7 @@ export function evaluateFactors(
     ...emaFactors(features, alignment),
     ...adxFactors(features, diDirection),
     ...rsiFactors(features),
+    ...openingRangeFactors(regime, regimeDirection),
     ...conflictFactors(regime, alignment, regimeDirection, diDirection),
     ...dataQualityFactors(regime),
   ];
@@ -198,6 +202,91 @@ function rsiFactors(features: RegimeFeatures): SignalFactor[] {
     factors.push({
       noTrade: weakTrend ? NO_TRADE_WEIGHTS.exhaustedWeakTrend : undefined,
       riskFlag: 'RSI is in oversold territory; reversal risk',
+    });
+  }
+
+  return factors;
+}
+
+/**
+ * Consumes the opening-range interpretation carried on the classification.
+ * The levels are computed once in the session layer; nothing is refetched or
+ * recalculated here.
+ */
+function openingRangeFactors(
+  regime: RegimeClassificationResult,
+  regimeDirection: Direction,
+): SignalFactor[] {
+  const range = regime.openingRange;
+  if (range === undefined || !range.available || range.status !== 'COMPLETE') {
+    return [];
+  }
+  const factors: SignalFactor[] = [];
+
+  if (range.breakoutAbove || range.breakdownBelow) {
+    const bullishBreak = range.breakoutAbove;
+    factors.push({
+      bullish: bullishBreak ? DIRECTIONAL_WEIGHTS.openingRangeBreak : undefined,
+      bearish: bullishBreak ? undefined : DIRECTIONAL_WEIGHTS.openingRangeBreak,
+      confirmation: `Price ${bullishBreak ? 'broke out above' : 'broke down below'} the opening range (${range.breakoutStrength.toLowerCase()})`,
+    });
+
+    const closes = bullishBreak ? range.closesAboveHigh : range.closesBelowLow;
+    if (closes >= SUSTAINED_OPENING_RANGE_CLOSES) {
+      factors.push({
+        bullish: bullishBreak
+          ? DIRECTIONAL_WEIGHTS.sustainedOpeningRangeBreak
+          : undefined,
+        bearish: bullishBreak
+          ? undefined
+          : DIRECTIONAL_WEIGHTS.sustainedOpeningRangeBreak,
+        confirmation: `${closes} completed candles closed beyond the opening range`,
+      });
+    }
+
+    if (range.volumeConfirmation === 'CONFIRMED') {
+      factors.push({
+        confirmation: 'Opening-range break carries above-average volume',
+      });
+    } else if (range.volumeConfirmation === 'NOT_CONFIRMED') {
+      factors.push({
+        riskFlag: 'Opening-range break lacks volume confirmation',
+      });
+    }
+  } else if (range.currentPricePosition === 'INSIDE') {
+    factors.push({
+      conflict: 'Price is still inside the opening range',
+    });
+  }
+
+  // A rejected break is context, never an automatic trade in the opposite
+  // direction: it only argues against the side that failed.
+  if (range.failedBreakoutAbove) {
+    factors.push({
+      noTrade:
+        regimeDirection === 'BULLISH'
+          ? NO_TRADE_WEIGHTS.openingRangeConflict
+          : undefined,
+      conflict: 'Price was rejected after trading above the opening range high',
+    });
+  }
+  if (range.failedBreakdownBelow) {
+    factors.push({
+      noTrade:
+        regimeDirection === 'BEARISH'
+          ? NO_TRADE_WEIGHTS.openingRangeConflict
+          : undefined,
+      conflict: 'Price was rejected after trading below the opening range low',
+    });
+  }
+
+  const opposed =
+    (regimeDirection === 'BULLISH' && range.currentPricePosition === 'BELOW') ||
+    (regimeDirection === 'BEARISH' && range.currentPricePosition === 'ABOVE');
+  if (opposed) {
+    factors.push({
+      noTrade: NO_TRADE_WEIGHTS.openingRangeConflict,
+      conflict: `Price sits ${range.currentPricePosition.toLowerCase()} the opening range against the ${regime.primaryRegime} regime`,
     });
   }
 

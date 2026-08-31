@@ -8,7 +8,10 @@ import type {
   RegimeDataQuality,
   RegimeSecondaryCharacteristics,
 } from '../../regime/interfaces/regime-result.interface.js';
-import type { SessionSnapshotContext } from '../../market-data/session/session-context.interface.js';
+import type {
+  OpeningRangeContext,
+  SessionSnapshotContext,
+} from '../../market-data/session/session-context.interface.js';
 
 export interface RegimeOverrides {
   symbol?: string;
@@ -18,6 +21,7 @@ export interface RegimeOverrides {
   secondaryCharacteristics?: Partial<RegimeSecondaryCharacteristics>;
   dataQuality?: Partial<RegimeDataQuality>;
   sessionContext?: SessionSnapshotContext;
+  openingRange?: Partial<OpeningRangeContext>;
   tradeEvaluationAllowed?: boolean;
   riskFlags?: string[];
 }
@@ -67,10 +71,47 @@ export function buildRegime(
       ...overrides.dataQuality,
     },
     sessionContext: overrides.sessionContext,
+    openingRange:
+      overrides.openingRange === undefined
+        ? undefined
+        : { ...COMPLETE_OPENING_RANGE, ...overrides.openingRange },
     tradeEvaluationAllowed: overrides.tradeEvaluationAllowed,
     riskFlags: overrides.riskFlags,
   };
 }
+
+/** A finished 09:30–09:45 window with price sitting back inside it. */
+export const COMPLETE_OPENING_RANGE: OpeningRangeContext = {
+  available: true,
+  status: 'COMPLETE',
+  startTime: '09:30',
+  endTime: '09:45',
+  windowMinutes: 15,
+  candleCount: 5,
+  expectedCandleCount: 5,
+  open: 648,
+  high: 652,
+  low: 646,
+  close: 650,
+  volume: 500_000,
+  range: 6,
+  rangePercent: 0.926,
+  currentPrice: 650,
+  currentPricePosition: 'INSIDE',
+  distanceFromHighPercent: -0.307,
+  distanceFromLowPercent: 0.619,
+  breakoutTolerancePercent: 0.05,
+  breakoutAbove: false,
+  breakdownBelow: false,
+  closesAboveHigh: 0,
+  closesBelowLow: 0,
+  failedBreakoutAbove: false,
+  failedBreakdownBelow: false,
+  breakoutStrength: 'NONE',
+  volumeConfirmation: 'UNKNOWN',
+  relativeBreakoutVolume: null,
+  postRangeCandleCount: 4,
+};
 
 /** Price above EMA9 > EMA21 > EMA50, i.e. a clean bullish stack. */
 export const BULLISH_EMAS: Partial<RegimeFeatures> = {

@@ -9,6 +9,10 @@ export const DIRECTIONAL_WEIGHTS = {
   adxConfirmedDirection: 2,
   strongAdx: 1,
   rsiSupport: 1.5,
+  /** Completed close beyond the frozen 09:30–09:45 opening range. */
+  openingRangeBreak: 2,
+  /** Repeated completed closes beyond the same boundary. */
+  sustainedOpeningRangeBreak: 1,
 } as const;
 
 /**
@@ -22,6 +26,8 @@ export const NO_TRADE_WEIGHTS = {
   lowRegimeConfidence: 2,
   conflict: 2,
   exhaustedWeakTrend: 1.5,
+  /** Direction contradicted by where price sits against the opening range. */
+  openingRangeConflict: 1.5,
   dataQualityWarnings: 1,
 } as const;
 

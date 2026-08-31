@@ -8,6 +8,7 @@ import type {
   MarketSession,
   SessionMaturity,
 } from '../../market-data/session/market-session.enum.js';
+import type { OpeningRangeContext } from '../../market-data/session/session-context.interface.js';
 import type { MarketSignal } from '../enums/market-signal.enum.js';
 
 export interface SignalScores {
@@ -28,6 +29,8 @@ export interface SignalMarketContext {
   timeframeMinutes?: number;
   currentSessionCandleCount?: number;
   indicatorCandleCount?: number;
+  /** 09:30–09:45 ET levels as interpreted by the session layer. */
+  openingRange?: OpeningRangeContext;
 }
 
 export interface SignalResult {

@@ -6,6 +6,7 @@ import type {
 } from '../enums/market-regime.enum.js';
 import type {
   CurrentSessionFeatures,
+  OpeningRangeContext,
   PremarketContext,
   PreviousSessionContext,
   SessionSnapshotContext,
@@ -38,6 +39,8 @@ export interface RegimeClassificationResult {
   /** Present only for session-aware classifications fetched from market data. */
   sessionContext?: SessionSnapshotContext;
   premarketContext?: PremarketContext;
+  /** 09:30–09:45 ET reference levels; frozen once the window closes. */
+  openingRange?: OpeningRangeContext;
   previousSessionContext?: PreviousSessionContext;
   currentSessionFeatures?: CurrentSessionFeatures;
   /**
