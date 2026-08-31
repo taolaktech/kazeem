@@ -47,4 +47,14 @@ describe('normalizeAggregates', () => {
     expect(result.rejected).toBe(2);
     expect(result.duplicates).toBe(1);
   });
+
+  it('accepts index bars, which are quoted without volume', () => {
+    const result = normalizeAggregates([
+      { o: 18.1, h: 18.4, l: 18, c: 18.3, t: 1_000 },
+    ]);
+
+    expect(result.rejected).toBe(0);
+    expect(result.candles[0].volume).toBe(0);
+    expect(result.candles[0].close).toBe(18.3);
+  });
 });

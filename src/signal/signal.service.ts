@@ -1,4 +1,5 @@
 import { Injectable } from '@nestjs/common';
+import type { MarketSessionSnapshot } from '../market-data/session/session-context.interface.js';
 import type { RegimeClassificationResult } from '../regime/interfaces/regime-result.interface.js';
 import { RegimeService } from '../regime/regime.service.js';
 import {
@@ -33,6 +34,21 @@ export class SignalService {
   ): Promise<SignalResult> {
     const regime = await this.regimeService.classifySymbol(symbol, count);
     return this.generateSignal(symbol, regime);
+  }
+
+  /**
+   * Derives the directional bias from an already fetched session snapshot, so
+   * callers that need both the signal and the underlying's price features pay
+   * for a single market data request.
+   */
+  getSignalForSession(
+    symbol: string,
+    session: MarketSessionSnapshot,
+  ): SignalResult {
+    return this.generateSignal(
+      symbol,
+      this.regimeService.classifySession(symbol, session),
+    );
   }
 
   generateSignal(
