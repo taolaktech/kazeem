@@ -39,11 +39,20 @@ export interface PreviousSessionContext {
   previousLow: number | null;
   previousOpen: number | null;
   direction: SessionTrendDirection;
-  candleCount: number;
+  /** Informational full-session count; never an analytical working set. */
+  totalSessionCandleCount: number;
 }
 
-/** What the current regular session has done so far, on completed candles. */
+/**
+ * What the current regular session has done so far.
+ *
+ * Every OHLC-derived field describes one scope: the capped analytical working
+ * window (the most recent `candleCount` completed candles, at most
+ * `MARKET_MAX_INDICATOR_CANDLES`). Full-session reference levels are kept in
+ * the separate `session*` fields, which are informational only.
+ */
 export interface CurrentSessionFeatures {
+  /** Size of the analytical window; never exceeds the configured cap. */
   candleCount: number;
   open: number | null;
   high: number | null;
@@ -61,6 +70,13 @@ export interface CurrentSessionFeatures {
   bearishCandleCount: number;
   higherHighs: boolean;
   lowerLows: boolean;
+  /** True 09:30 ET open of the day, outside the analytical window. */
+  sessionOpen: number | null;
+  sessionHigh: number | null;
+  sessionLow: number | null;
+  /** Informational full-session count; never an analytical working set. */
+  totalSessionCandleCount: number;
+  /** Last close against the full-session open, not the window open. */
   aboveSessionOpen: boolean | null;
   abovePremarketHigh: boolean | null;
   belowPremarketLow: boolean | null;
@@ -117,8 +133,12 @@ export interface OpeningRangeContext {
   volumeConfirmation: OpeningRangeVolumeConfirmation;
   /** Breakout-candle volume relative to the average opening-range candle. */
   relativeBreakoutVolume: number | null;
-  /** Completed candles after the window that are available so far. */
-  postRangeCandleCount: number;
+  /**
+   * Informational count of completed candles after the opening-range window.
+   * The opening range is preserved full-session context, so this is metadata
+   * only and is never the regime analytical working set.
+   */
+  totalPostRangeCandleCount: number;
 }
 
 export interface SessionSnapshotContext {

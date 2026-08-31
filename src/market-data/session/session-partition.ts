@@ -132,7 +132,7 @@ export function partitionSessionCandles(
   const currentSessionFeatures = buildCurrentSessionFeatures(
     currentSessionCandles,
     premarket,
-    sessionCandles[0]?.open ?? null,
+    sessionCandles,
   );
   const openingRangeMinutes =
     options.openingRangeMinutes ?? openingSettlementMinutes;

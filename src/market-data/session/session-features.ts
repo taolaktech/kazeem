@@ -46,7 +46,7 @@ export const EMPTY_PREVIOUS_SESSION_CONTEXT: PreviousSessionContext = {
   previousLow: null,
   previousOpen: null,
   direction: 'UNKNOWN',
-  candleCount: 0,
+  totalSessionCandleCount: 0,
 };
 
 export const EMPTY_CURRENT_SESSION_FEATURES: CurrentSessionFeatures = {
@@ -65,6 +65,10 @@ export const EMPTY_CURRENT_SESSION_FEATURES: CurrentSessionFeatures = {
   bearishCandleCount: 0,
   higherHighs: false,
   lowerLows: false,
+  sessionOpen: null,
+  sessionHigh: null,
+  sessionLow: null,
+  totalSessionCandleCount: 0,
   aboveSessionOpen: null,
   abovePremarketHigh: null,
   belowPremarketLow: null,
@@ -192,29 +196,30 @@ export function buildPreviousSessionContext(
         : changePercent > 0
           ? 'BULLISH'
           : 'BEARISH',
-    candleCount: candles.length,
+    totalSessionCandleCount: candles.length,
   };
 }
 
 /**
- * `candles` is the capped analytical working set. `sessionOpen` carries the
- * real 09:30 open of the day, which stays a valid reference level even once
- * the session has produced more candles than the working set holds.
+ * Every OHLC field below comes from `candles`, the capped analytical window,
+ * so the scopes never mix. `sessionCandles` is the untruncated day and only
+ * feeds the informational `session*` reference levels.
  */
 export function buildCurrentSessionFeatures(
   candles: readonly MarketCandle[],
   premarket: PremarketContext,
-  sessionOpen: number | null = null,
+  sessionCandles: readonly MarketCandle[] = candles,
 ): CurrentSessionFeatures {
   if (candles.length === 0) {
     return EMPTY_CURRENT_SESSION_FEATURES;
   }
 
-  const open = sessionOpen ?? candles[0].open;
+  const open = candles[0].open;
   const close = candles[candles.length - 1].close;
   const high = Math.max(...candles.map((candle) => candle.high));
   const low = Math.min(...candles.map((candle) => candle.low));
   const range = high - low;
+  const sessionOpen = sessionCandles[0]?.open ?? open;
 
   return {
     candleCount: candles.length,
@@ -234,7 +239,11 @@ export function buildCurrentSessionFeatures(
       .length,
     higherHighs: hasHigherHighs(candles),
     lowerLows: hasLowerLows(candles),
-    aboveSessionOpen: close > open,
+    sessionOpen,
+    sessionHigh: Math.max(...sessionCandles.map((candle) => candle.high)),
+    sessionLow: Math.min(...sessionCandles.map((candle) => candle.low)),
+    totalSessionCandleCount: sessionCandles.length,
+    aboveSessionOpen: close > sessionOpen,
     abovePremarketHigh: premarket.high === null ? null : close > premarket.high,
     belowPremarketLow: premarket.low === null ? null : close < premarket.low,
   };
