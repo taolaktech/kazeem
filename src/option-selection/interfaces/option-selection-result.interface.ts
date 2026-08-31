@@ -11,6 +11,8 @@ export interface OptionSelectionResult {
   /** `null` whenever the signal is not directional. */
   optionType: OptionType | null;
   status: OptionSelectionStatus;
+  /** Mirrors the signal engine: false means no actionable recommendation. */
+  tradeEvaluationAllowed: boolean;
   confidence: number;
   /** Maximum total premium, in dollars, allowed for one contract position. */
   maxBudget: number;

@@ -21,12 +21,17 @@ import {
   withQuote,
 } from './testing/contract-factory.js';
 
-function buildSignal(signal: MarketSignal, confidence = 0.8): SignalResult {
+function buildSignal(
+  signal: MarketSignal,
+  confidence = 0.8,
+  tradeEvaluationAllowed = true,
+): SignalResult {
   return {
     symbol: 'TEST',
     timestamp: new Date('2026-09-02T14:30:00.000Z'),
     signal,
     confidence,
+    tradeEvaluationAllowed,
     scores: { bullish: 6, bearish: 1, noTrade: 0 },
     confirmations: [],
     conflicts: [],
@@ -460,5 +465,28 @@ describe('OptionSelectionService', () => {
     expect(result.selectedContract?.moneyness).toBe('ITM');
     expect(result.selectedContract?.strikeDistancePercent).toBeCloseTo(0.02, 4);
     expect(getLatestPrice).toHaveBeenCalledWith('TEST');
+  });
+  it('returns no selection and skips the options chain when trade evaluation is blocked', async () => {
+    getSignalForSymbol.mockResolvedValue(
+      buildSignal(MarketSignal.BULLISH, 0.8, false),
+    );
+
+    const result = await select({ maxBudget: 500 });
+
+    expect(result.status).toBe(OptionSelectionStatus.NO_SELECTION);
+    expect(result.selectedContract).toBeNull();
+    expect(result.tradeEvaluationAllowed).toBe(false);
+    expect(result.maxBudget).toBe(500);
+    expect(getOptionChain).not.toHaveBeenCalled();
+    expect(getLatestPrice).not.toHaveBeenCalled();
+  });
+
+  it('still selects a contract within budget once trade evaluation is allowed', async () => {
+    mock(MarketSignal.BULLISH, [buildContract({ symbol: 'CALL_1' })]);
+
+    const result = await select({ maxBudget: 100_000 });
+
+    expect(result.tradeEvaluationAllowed).toBe(true);
+    expect(result.status).toBe(OptionSelectionStatus.SELECTED);
   });
 });

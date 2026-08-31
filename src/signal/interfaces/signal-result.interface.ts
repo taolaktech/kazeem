@@ -4,6 +4,10 @@ import type {
   TrendStrength,
   VolatilityLevel,
 } from '../../regime/enums/market-regime.enum.js';
+import type {
+  MarketSession,
+  SessionMaturity,
+} from '../../market-data/session/market-session.enum.js';
 import type { MarketSignal } from '../enums/market-signal.enum.js';
 
 export interface SignalScores {
@@ -18,6 +22,12 @@ export interface SignalMarketContext {
   trendDirection: TrendDirection;
   trendStrength: TrendStrength;
   volatility: VolatilityLevel;
+  /** Session metadata, present when the regime came from live market data. */
+  marketSession?: MarketSession;
+  sessionMaturity?: SessionMaturity;
+  timeframeMinutes?: number;
+  currentSessionCandleCount?: number;
+  indicatorCandleCount?: number;
 }
 
 export interface SignalResult {
@@ -25,6 +35,11 @@ export interface SignalResult {
   timestamp: Date;
   signal: MarketSignal;
   confidence: number;
+  /**
+   * Whether downstream layers may act on this signal. The signal itself is
+   * always produced, including during the opening settlement period.
+   */
+  tradeEvaluationAllowed: boolean;
   scores: SignalScores;
   /** Indicators that support the winning direction. */
   confirmations: string[];

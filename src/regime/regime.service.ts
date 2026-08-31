@@ -1,5 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { MarketDataService } from '../market-data/market-data.service.js';
+import type { MarketSessionSnapshot } from '../market-data/session/session-context.interface.js';
+import { MATURITY_CONFIDENCE_FACTOR } from '../market-data/session/session-maturity.js';
 import { validateCandles } from './candle-validator.js';
 import { IndicatorService } from './indicators/indicator.service.js';
 import {
@@ -26,6 +28,11 @@ import {
   type RegimeSignals,
 } from './regime-scoring.js';
 import {
+  applySessionEvidence,
+  evaluateSessionEvidence,
+  type SessionEvidence,
+} from './session-evidence.js';
+import {
   ADX_RANGE_THRESHOLD,
   ADX_TREND_THRESHOLD,
   CONFIDENCE_WEIGHTS,
@@ -38,6 +45,24 @@ import {
   TREND_STRENGTH_STRONG_ADX,
 } from './regime.constants.js';
 
+/**
+ * Session evidence widens the attainable score of the trend regimes, so a
+ * classification lifted by current-session price action is not rewarded with
+ * artificially high confidence.
+ */
+function attainableSessionEvidence(
+  regime: MarketRegime,
+  evidence?: SessionEvidence,
+): number {
+  if (evidence === undefined) {
+    return 0;
+  }
+  if (regime === MarketRegime.TRENDING_BULLISH) {
+    return evidence.bullish;
+  }
+  return regime === MarketRegime.TRENDING_BEARISH ? evidence.bearish : 0;
+}
+
 /** Deterministic, rule-based market regime classifier (version 1, no ML). */
 @Injectable()
 export class RegimeService implements RegimeClassifier {
@@ -46,16 +71,19 @@ export class RegimeService implements RegimeClassifier {
     private readonly marketDataService: MarketDataService,
   ) {}
 
-  /** Classifies `symbol` from market data fetched on demand. */
+  /**
+   * Classifies `symbol` from market data fetched on demand, weighting the
+   * current session's completed candles against previous-session warm-up
+   * history and premarket context.
+   */
   async classifySymbol(
     symbol: string,
     count?: number,
   ): Promise<RegimeClassificationResult> {
-    const candles = await this.marketDataService.getRecentMinuteCandles(
-      symbol,
-      count,
-    );
-    return this.classify(symbol, candles);
+    const snapshot = await this.marketDataService.getSessionSnapshot(symbol, {
+      maxIndicatorCandles: count,
+    });
+    return this.classifySession(symbol, snapshot);
   }
 
   async classify(
@@ -87,7 +115,7 @@ export class RegimeService implements RegimeClassifier {
       primaryRegime,
       scores,
       signals,
-      candleCount,
+      Math.min(1, candleCount / MIN_RECOMMENDED_CANDLES),
     );
 
     return {
@@ -107,6 +135,70 @@ export class RegimeService implements RegimeClassifier {
         sufficientData: candleCount >= MIN_RECOMMENDED_CANDLES,
         warnings,
       },
+    };
+  }
+
+  /**
+   * Indicators run on the warm-up window so EMA50 and friends stay valid from
+   * the first minutes of the day, while the score adjustment comes from the
+   * current session — history sets the baseline, today's tape decides.
+   */
+  classifySession(
+    symbol: string,
+    session: MarketSessionSnapshot,
+  ): RegimeClassificationResult {
+    const validated = validateCandles(session.indicatorCandles);
+    const candleCount = validated.candles.length;
+    if (candleCount < MIN_REQUIRED_CANDLES) {
+      throw new InsufficientMarketDataException(symbol, candleCount, [
+        ...session.warnings,
+        ...validated.warnings,
+      ]);
+    }
+
+    const snapshot = this.indicatorService.computeSnapshot(validated.candles);
+    const evidence = evaluateSessionEvidence(session);
+    const signals = buildSignals(snapshot);
+    const scores = applySessionEvidence(scoreSignals(signals), evidence);
+    const primaryRegime = this.selectPrimaryRegime(scores, snapshot);
+    const confidence = this.computeConfidence(
+      primaryRegime,
+      scores,
+      signals,
+      MATURITY_CONFIDENCE_FACTOR[session.context.sessionMaturity],
+      evidence,
+    );
+
+    return {
+      symbol,
+      timestamp: session.asOf,
+      primaryRegime,
+      confidence,
+      scores,
+      secondaryCharacteristics: this.describeSecondaryCharacteristics(
+        snapshot,
+        scores,
+      ),
+      features: snapshot.features,
+      reasoning: [
+        ...this.buildReasoning(primaryRegime, signals, scores),
+        ...evidence.reasoning,
+      ],
+      dataQuality: {
+        candleCount,
+        sufficientData: session.context.tradeEvaluationAllowed,
+        warnings: [
+          ...session.warnings,
+          ...validated.warnings,
+          ...snapshot.warnings,
+        ],
+      },
+      sessionContext: session.context,
+      premarketContext: session.premarket,
+      previousSessionContext: session.previousSession,
+      currentSessionFeatures: session.currentSessionFeatures,
+      tradeEvaluationAllowed: session.context.tradeEvaluationAllowed,
+      riskFlags: evidence.riskFlags,
     };
   }
 
@@ -169,9 +261,12 @@ export class RegimeService implements RegimeClassifier {
     primaryRegime: MarketRegime,
     scores: Record<MarketRegime, number>,
     signals: RegimeSignals,
-    candleCount: number,
+    dataQualityFactor: number,
+    evidence?: SessionEvidence,
   ): number {
-    const attainable = maxAttainableScore(signals[primaryRegime]);
+    const attainable =
+      maxAttainableScore(signals[primaryRegime]) +
+      attainableSessionEvidence(primaryRegime, evidence);
     const strength = attainable > 0 ? scores[primaryRegime] / attainable : 0;
 
     const sorted = MARKET_REGIMES.map((regime) => scores[regime]).sort(
@@ -189,10 +284,6 @@ export class RegimeService implements RegimeClassifier {
           applicable.length
         : 0;
 
-    const dataQualityFactor = Math.min(
-      1,
-      candleCount / MIN_RECOMMENDED_CANDLES,
-    );
     const confidence =
       (CONFIDENCE_WEIGHTS.scoreStrength * strength +
         CONFIDENCE_WEIGHTS.separation * separation +

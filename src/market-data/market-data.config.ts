@@ -1,6 +1,7 @@
 import { registerAs } from '@nestjs/config';
 
 export const MASSIVE_CONFIG_KEY = 'massive';
+export const MARKET_SESSION_CONFIG_KEY = 'marketSession';
 
 export interface MassiveConfig {
   apiKey: string;
@@ -9,6 +10,15 @@ export interface MassiveConfig {
   maxPages: number;
   /** Keep only bars inside the US regular trading session (09:30–16:00 ET). */
   regularHoursOnly: boolean;
+}
+
+export interface MarketSessionConfig {
+  /** Aggregation of the candles the regime and signal engines run on. */
+  primaryTimeframeMinutes: number;
+  /** Upper bound on indicator history; never a minimum before evaluating. */
+  maxIndicatorCandles: number;
+  /** Minutes after the 09:30 ET open during which trades are not evaluated. */
+  openingSettlementMinutes: number;
 }
 
 function readNumber(value: string | undefined, fallback: number): number {
@@ -42,6 +52,26 @@ export const massiveConfig = registerAs(
       regularHoursOnly: readBoolean(
         process.env.MASSIVE_REGULAR_HOURS_ONLY,
         true,
+      ),
+    };
+  },
+);
+
+export const marketSessionConfig = registerAs(
+  MARKET_SESSION_CONFIG_KEY,
+  (): MarketSessionConfig => {
+    return {
+      primaryTimeframeMinutes: readNumber(
+        process.env.MARKET_PRIMARY_TIMEFRAME_MINUTES,
+        3,
+      ),
+      maxIndicatorCandles: readNumber(
+        process.env.MARKET_MAX_INDICATOR_CANDLES,
+        80,
+      ),
+      openingSettlementMinutes: readNumber(
+        process.env.OPENING_SETTLEMENT_MINUTES,
+        15,
       ),
     };
   },

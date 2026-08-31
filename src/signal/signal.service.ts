@@ -43,7 +43,10 @@ export class SignalService {
     const scores = tally(factors);
     const confirmations = collect(factors, 'confirmation');
     const conflicts = collect(factors, 'conflict');
-    const riskFlags = collect(factors, 'riskFlag');
+    const riskFlags = [
+      ...collect(factors, 'riskFlag'),
+      ...(regime.riskFlags ?? []),
+    ];
 
     const leaderScore = Math.max(scores.bullish, scores.bearish);
     const opposingScore = Math.min(scores.bullish, scores.bearish);
@@ -64,6 +67,7 @@ export class SignalService {
       symbol,
       timestamp: regime.timestamp,
       signal,
+      tradeEvaluationAllowed: regime.tradeEvaluationAllowed ?? true,
       confidence: this.computeConfidence(
         signal,
         scores,
@@ -84,6 +88,12 @@ export class SignalService {
         regime: regime.primaryRegime,
         regimeConfidence: regime.confidence,
         ...regime.secondaryCharacteristics,
+        marketSession: regime.sessionContext?.marketSession,
+        sessionMaturity: regime.sessionContext?.sessionMaturity,
+        timeframeMinutes: regime.sessionContext?.timeframeMinutes,
+        currentSessionCandleCount:
+          regime.sessionContext?.currentSessionCandleCount,
+        indicatorCandleCount: regime.sessionContext?.indicatorCandleCount,
       },
       riskFlags,
     };

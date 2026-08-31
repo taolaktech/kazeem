@@ -9,6 +9,10 @@ import {
   MIXED_EMAS,
   buildRegime,
 } from './testing/regime-factory.js';
+import {
+  MarketSession,
+  SessionMaturity,
+} from '../market-data/session/market-session.enum.js';
 
 describe('SignalService', () => {
   let service: SignalService;
@@ -283,5 +287,49 @@ describe('SignalService', () => {
     expect(result.conflicts).toContain(
       'Bullish and bearish directional scores are close',
     );
+  });
+  it('propagates session context and trade eligibility from the regime', () => {
+    const result = service.generateSignal(
+      'SPY',
+      buildRegime({
+        primaryRegime: MarketRegime.TRENDING_BULLISH,
+        tradeEvaluationAllowed: false,
+        riskFlags: ['Opening 15-minute settlement period active.'],
+        sessionContext: {
+          timezone: 'America/New_York',
+          sessionDate: '2026-08-28',
+          marketSession: MarketSession.OPENING_SETTLEMENT,
+          sessionMaturity: SessionMaturity.SETTLING,
+          timeframeMinutes: 3,
+          currentSessionCandleCount: 3,
+          indicatorCandleCount: 80,
+          premarketCandleCount: 0,
+          previousSessionWarmupCandleCount: 77,
+          openingSettlementMinutes: 15,
+          tradeEvaluationAllowed: false,
+        },
+      }),
+    );
+
+    expect(result.tradeEvaluationAllowed).toBe(false);
+    expect(result.marketContext).toMatchObject({
+      marketSession: MarketSession.OPENING_SETTLEMENT,
+      sessionMaturity: SessionMaturity.SETTLING,
+      timeframeMinutes: 3,
+      currentSessionCandleCount: 3,
+      indicatorCandleCount: 80,
+    });
+    expect(result.riskFlags).toContain(
+      'Opening 15-minute settlement period active.',
+    );
+  });
+
+  it('allows trade evaluation when the regime does not restrict it', () => {
+    const result = service.generateSignal(
+      'SPY',
+      buildRegime({ primaryRegime: MarketRegime.TRENDING_BULLISH }),
+    );
+
+    expect(result.tradeEvaluationAllowed).toBe(true);
   });
 });
