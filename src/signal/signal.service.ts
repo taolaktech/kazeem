@@ -1,5 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import type { RegimeClassificationResult } from '../regime/interfaces/regime-result.interface.js';
+import { RegimeService } from '../regime/regime.service.js';
 import {
   CONFIDENCE_WEIGHTS,
   DATA_QUALITY_PENALTY,
@@ -23,6 +24,17 @@ import { evaluateFactors, type SignalFactor } from './signal-factors.js';
  */
 @Injectable()
 export class SignalService {
+  constructor(private readonly regimeService: RegimeService) {}
+
+  /** Classifies `symbol`'s current regime and derives its directional bias. */
+  async getSignalForSymbol(
+    symbol: string,
+    count?: number,
+  ): Promise<SignalResult> {
+    const regime = await this.regimeService.classifySymbol(symbol, count);
+    return this.generateSignal(symbol, regime);
+  }
+
   generateSignal(
     symbol: string,
     regime: RegimeClassificationResult,
