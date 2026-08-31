@@ -481,11 +481,55 @@ describe('session partitioning', () => {
       );
     });
 
-    it('keeps the real session open as preserved context after truncation', () => {
+    it('keeps full-session reference levels alongside the capped window', () => {
       const session = fullDay(130);
       const snapshot = partition(session, afterClose);
+      const features = snapshot.currentSessionFeatures;
+      const working = session.slice(-80);
 
-      expect(snapshot.currentSessionFeatures.open).toBe(session[0].open);
+      // Window OHLC is self-consistent: open sits inside [low, high].
+      expect(features.open).toBe(working[0].open);
+      expect(features.high).toBeGreaterThanOrEqual(features.open ?? 0);
+      expect(features.low).toBeLessThanOrEqual(features.open ?? 0);
+      expect(features.high).toBeGreaterThanOrEqual(features.close ?? 0);
+
+      // Full-session levels stay available, explicitly named and informational.
+      expect(features.sessionOpen).toBe(session[0].open);
+      expect(features.sessionHigh).toBe(
+        Math.max(...session.map((candle) => candle.high)),
+      );
+      expect(features.sessionLow).toBe(
+        Math.min(...session.map((candle) => candle.low)),
+      );
+      expect(features.totalSessionCandleCount).toBe(130);
+      expect(features.candleCount).toBe(80);
+    });
+
+    it('names every count above the cap as informational metadata', () => {
+      const snapshot = partition(
+        [...previousSession(), ...fullDay(130)],
+        afterClose,
+      );
+      const counts: Record<string, number> = {
+        'currentSessionFeatures.candleCount':
+          snapshot.currentSessionFeatures.candleCount,
+        'context.currentSessionCandleCount':
+          snapshot.context.currentSessionCandleCount,
+        'context.indicatorCandleCount': snapshot.context.indicatorCandleCount,
+        'openingRange.candleCount': snapshot.openingRange.candleCount,
+      };
+
+      for (const value of Object.values(counts)) {
+        expect(value).toBeLessThanOrEqual(80);
+      }
+      expect(snapshot.currentSessionCandles.length).toBeLessThanOrEqual(80);
+      expect(snapshot.indicatorCandles.length).toBeLessThanOrEqual(80);
+      expect(snapshot.previousSession.totalSessionCandleCount).toBeGreaterThan(
+        80,
+      );
+      expect(snapshot.openingRange.totalPostRangeCandleCount).toBeGreaterThan(
+        80,
+      );
     });
 
     it('keeps the opening range correct once the session exceeds the cap', () => {

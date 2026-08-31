@@ -421,5 +421,41 @@ describe('RegimeService', () => {
       expect(result.premarketContext).toBeDefined();
       expect(result.previousSessionContext?.available).toBe(true);
     });
+
+    it('feeds the indicator engine at most 80 candles', () => {
+      const snapshot = buildSessionSnapshot({
+        atHour: 16,
+        atMinute: 30,
+        currentCandles: 300,
+      });
+      const computeSnapshot = vi.spyOn(
+        service['indicatorService'],
+        'computeSnapshot',
+      );
+
+      service.classifySession('SPY', snapshot);
+
+      expect(computeSnapshot).toHaveBeenCalledTimes(1);
+      expect(computeSnapshot.mock.calls[0][0].length).toBeLessThanOrEqual(80);
+      expect(snapshot.currentSessionCandles.length).toBeLessThanOrEqual(80);
+      expect(snapshot.indicatorCandles.length).toBeLessThanOrEqual(80);
+      computeSnapshot.mockRestore();
+    });
+
+    it('keeps one consistent scope in the session OHLC object', () => {
+      const result = service.classifySession(
+        'SPY',
+        buildSessionSnapshot({ atHour: 16, atMinute: 30, currentCandles: 130 }),
+      );
+      const features = result.currentSessionFeatures;
+
+      expect(features?.high).toBeGreaterThanOrEqual(features?.open ?? 0);
+      expect(features?.high).toBeGreaterThanOrEqual(features?.close ?? 0);
+      expect(features?.low).toBeLessThanOrEqual(features?.open ?? 0);
+      expect(features?.low).toBeLessThanOrEqual(features?.close ?? 0);
+      expect(features?.sessionHigh).toBeGreaterThanOrEqual(features?.high ?? 0);
+      expect(features?.totalSessionCandleCount).toBe(130);
+      expect(features?.candleCount).toBe(80);
+    });
   });
 });

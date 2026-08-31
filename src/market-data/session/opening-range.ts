@@ -63,7 +63,7 @@ export function unavailableOpeningRange(
     breakoutStrength: 'NONE',
     volumeConfirmation: 'UNKNOWN',
     relativeBreakoutVolume: null,
-    postRangeCandleCount: 0,
+    totalPostRangeCandleCount: 0,
   };
 }
 
@@ -170,7 +170,7 @@ export function buildOpeningRangeContext(
     ),
     volumeConfirmation: confirmation,
     relativeBreakoutVolume: volumeRatio,
-    postRangeCandleCount: postRangeCandles.length,
+    totalPostRangeCandleCount: postRangeCandles.length,
   };
 }
 

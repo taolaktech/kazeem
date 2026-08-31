@@ -110,7 +110,7 @@ export const COMPLETE_OPENING_RANGE: OpeningRangeContext = {
   breakoutStrength: 'NONE',
   volumeConfirmation: 'UNKNOWN',
   relativeBreakoutVolume: null,
-  postRangeCandleCount: 4,
+  totalPostRangeCandleCount: 4,
 };
 
 /** Price above EMA9 > EMA21 > EMA50, i.e. a clean bullish stack. */

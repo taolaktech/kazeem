@@ -65,7 +65,7 @@ export const OPENING_RANGE: OpeningRangeContext = {
   breakoutStrength: 'STRONG',
   volumeConfirmation: 'CONFIRMED',
   relativeBreakoutVolume: 1.6,
-  postRangeCandleCount: 20,
+  totalPostRangeCandleCount: 20,
 };
 
 const PREMARKET: PremarketContext = {
@@ -97,7 +97,7 @@ const PREVIOUS_SESSION: PreviousSessionContext = {
   previousLow: 644,
   previousOpen: 645,
   direction: 'BULLISH',
-  candleCount: 130,
+  totalSessionCandleCount: 130,
 };
 
 const BULLISH_SESSION_FEATURES: CurrentSessionFeatures = {
@@ -116,6 +116,10 @@ const BULLISH_SESSION_FEATURES: CurrentSessionFeatures = {
   bearishCandleCount: 8,
   higherHighs: true,
   lowerLows: false,
+  sessionOpen: 648,
+  sessionHigh: 656,
+  sessionLow: 646,
+  totalSessionCandleCount: 25,
   aboveSessionOpen: true,
   abovePremarketHigh: true,
   belowPremarketLow: false,

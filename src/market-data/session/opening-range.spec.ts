@@ -147,7 +147,7 @@ describe('opening range', () => {
     expect(range.candleCount).toBe(5);
     expect(range.high).toBe(OPENING_HIGH);
     expect(range.close).toBe(100.6);
-    expect(range.postRangeCandleCount).toBe(1);
+    expect(range.totalPostRangeCandleCount).toBe(1);
   });
 
   it('takes open, close, high, low and volume from the window', () => {
@@ -372,7 +372,7 @@ describe('opening range', () => {
     const asOf0951 = snapshotOf(full, at(9, 51)).openingRange;
 
     expect(asOf0951.high).toBe(OPENING_HIGH);
-    expect(asOf0951.postRangeCandleCount).toBe(2);
+    expect(asOf0951.totalPostRangeCandleCount).toBe(2);
     expect(asOf0951.currentPrice).toBe(102);
   });
 
