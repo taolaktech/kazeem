@@ -4,6 +4,7 @@ import { NewsSentiment } from '../../news-intelligence/enums/news-sentiment.enum
 import type { NewsIntelligenceResult } from '../../news-intelligence/interfaces/news-intelligence-result.interface.js';
 import {
   CATEGORY_WEIGHTS,
+  NEWS_CONFIDENCE_FLOOR,
   NEWS_FACTORS,
 } from '../constants/trade-decision-weights.js';
 import {
@@ -15,10 +16,21 @@ import type {
   ComponentScore,
   DecisionConflict,
 } from '../interfaces/component-score.interface.js';
-import { conflict, round2 } from './scoring.util.js';
+import { clamp01, conflict, round2 } from './scoring.util.js';
 
 const CATEGORY = DecisionCategory.NEWS;
 const WEIGHT = CATEGORY_WEIGHTS[CATEGORY];
+const LOW_CONFIDENCE_THRESHOLD = 0.5;
+
+/**
+ * Pulls a categorical factor back towards neutral when the news read itself is
+ * weakly held, in either direction.
+ */
+function weightedByConfidence(factor: number, confidence: number): number {
+  const scale =
+    NEWS_CONFIDENCE_FLOOR + (1 - NEWS_CONFIDENCE_FLOOR) * clamp01(confidence);
+  return NEWS_FACTORS.neutral + (factor - NEWS_FACTORS.neutral) * scale;
+}
 
 /**
  * Context, not a directional engine: news can confirm or contradict a thesis
@@ -70,6 +82,13 @@ export function scoreNews(
     (bullish ? MarketRiskBias.RISK_OFF : MarketRiskBias.RISK_ON);
   const highImpact = news.newsImpact === NewsImpact.HIGH;
 
+  // How strongly the categorical read is held; only the sides that actually
+  // point at the thesis get a say.
+  const evidenceConfidence = Math.max(
+    supportiveSentiment || opposingSentiment ? news.sentimentConfidence : 0,
+    supportiveRisk || opposingRisk ? news.riskBiasConfidence : 0,
+  );
+
   let factor: number = NEWS_FACTORS.neutral;
   if (supportiveSentiment && supportiveRisk) {
     factor = NEWS_FACTORS.strongConfirmation;
@@ -94,6 +113,14 @@ export function scoreNews(
     );
   }
 
+  if (
+    factor !== NEWS_FACTORS.neutral &&
+    evidenceConfidence < LOW_CONFIDENCE_THRESHOLD
+  ) {
+    riskFlags.push(
+      `News read is low confidence (${round2(evidenceConfidence)}); its weight is reduced`,
+    );
+  }
   if (news.riskBiasConflict) {
     riskFlags.push('News carries competing risk-on and risk-off narratives');
   }
@@ -102,7 +129,7 @@ export function scoreNews(
   }
 
   return {
-    earned: round2(WEIGHT * factor),
+    earned: round2(WEIGHT * weightedByConfidence(factor, evidenceConfidence)),
     available: WEIGHT,
     confirmations,
     conflicts,

@@ -109,6 +109,13 @@ export const OPTION_QUALITY_THRESHOLDS = {
 /** Neutral news/volatility earns the middle of its category, not zero. */
 export const CONTEXT_BASELINE_FACTOR = 0.6;
 
+/**
+ * Share of the distance between neutral and a categorical news factor that a
+ * zero-confidence read earns, so a 0.35-confidence RISK_OFF cannot score like
+ * a conviction call.
+ */
+export const NEWS_CONFIDENCE_FLOOR = 0.3;
+
 export const NEWS_FACTORS = {
   strongConfirmation: 1,
   confirmation: 0.85,

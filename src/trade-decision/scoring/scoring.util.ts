@@ -20,6 +20,16 @@ export function scaleBetween(value: number, low: number, high: number): number {
   return clamp01((value - low) / (high - low));
 }
 
+/**
+ * `penalized` is not severity. Severity says how much a reader should care;
+ * `penalized` says whether the centralized score deduction applies, and it may
+ * only be true for a contradiction between components that no single component
+ * score already expresses — another intelligence layer actively pointing the
+ * other way from the traded direction. Weakness inside one component (thin
+ * liquidity, a range-bound regime, an unsupportive structure) is already paid
+ * for by that component's own earned points, so flagging it here as well would
+ * charge the setup twice.
+ */
 export function conflict(
   category: DecisionCategory,
   code: string,

@@ -81,8 +81,12 @@ export function decide(input: TradeDecisionInput): TradeDecisionResult {
       ? clamp(round2((rawEarnedScore / availableWeight) * 100))
       : 0;
 
-  const conflicts = dedupeConflicts(
-    Object.values(componentScores).flatMap((component) => component.conflicts),
+  const conflicts = withAccuratePenaltyFlags(
+    dedupeConflicts(
+      Object.values(componentScores).flatMap(
+        (component) => component.conflicts,
+      ),
+    ),
   );
   const conflictPenalty = conflicts
     .filter((item) => item.penalized)
@@ -205,6 +209,20 @@ function dedupeConflicts(
     }
   }
   return [...byCode.values()];
+}
+
+/**
+ * `penalized` must mean "this deducted points centrally", so a severity that
+ * carries no deduction can never advertise one.
+ */
+function withAccuratePenaltyFlags(
+  conflicts: readonly DecisionConflict[],
+): DecisionConflict[] {
+  return conflicts.map((item) =>
+    item.penalized && CONFLICT_PENALTIES[item.severity] === 0
+      ? { ...item, penalized: false }
+      : item,
+  );
 }
 
 function gradeFor(score: number): SetupGrade {
@@ -512,6 +530,7 @@ function buildMarketContext(
   input: TradeDecisionInput,
 ): TradeDecisionResult['marketContext'] {
   const { snapshot, regime, signal } = input;
+  const features = snapshot.currentSessionFeatures;
   return {
     regime: regime.primaryRegime,
     regimeConfidence: regime.confidence,
@@ -524,10 +543,21 @@ function buildMarketContext(
     sessionMaturity: snapshot.context.sessionMaturity,
     timeframeMinutes: snapshot.context.timeframeMinutes,
     currentSessionCandleCount: snapshot.context.currentSessionCandleCount,
+    totalSessionCandleCount: features.totalSessionCandleCount,
     currentPrice: regime.features.currentPrice,
-    sessionOpen: snapshot.currentSessionFeatures.open,
-    sessionHigh: snapshot.currentSessionFeatures.high,
-    sessionLow: snapshot.currentSessionFeatures.low,
+    sessionOpen: features.sessionOpen,
+    sessionHigh: features.sessionHigh,
+    sessionLow: features.sessionLow,
+    sessionPositionInRange: features.sessionPositionInRange,
+    analysisWindow: {
+      timeframeMinutes: snapshot.context.timeframeMinutes,
+      candleCount: features.candleCount,
+      open: features.open,
+      high: features.high,
+      low: features.low,
+      close: features.close,
+      positionInRange: features.positionInRange,
+    },
     premarketHigh: snapshot.premarket.high,
     premarketLow: snapshot.premarket.low,
     openingRange: snapshot.openingRange,
