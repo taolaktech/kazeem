@@ -4,6 +4,12 @@ import type {
   TrendStrength,
   VolatilityLevel,
 } from '../enums/market-regime.enum.js';
+import type {
+  CurrentSessionFeatures,
+  PremarketContext,
+  PreviousSessionContext,
+  SessionSnapshotContext,
+} from '../../market-data/session/session-context.interface.js';
 import type { MarketCandle } from './market-data.interface.js';
 import type { RegimeFeatures } from './indicator-features.interface.js';
 
@@ -29,6 +35,17 @@ export interface RegimeClassificationResult {
   features: RegimeFeatures;
   reasoning: string[];
   dataQuality: RegimeDataQuality;
+  /** Present only for session-aware classifications fetched from market data. */
+  sessionContext?: SessionSnapshotContext;
+  premarketContext?: PremarketContext;
+  previousSessionContext?: PreviousSessionContext;
+  currentSessionFeatures?: CurrentSessionFeatures;
+  /**
+   * False while the market is outside regular hours or still inside the
+   * opening settlement period. The classification is still produced.
+   */
+  tradeEvaluationAllowed?: boolean;
+  riskFlags?: string[];
 }
 
 export interface RegimeClassifier {

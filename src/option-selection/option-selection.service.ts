@@ -57,11 +57,37 @@ export class OptionSelectionService {
     options: OptionSelectionOptions,
   ): Promise<OptionSelectionResult> {
     const { maxBudget } = options;
+
+    // Outside tradable session conditions nothing is actionable, so the option
+    // chain is never requested.
+    if (!signal.tradeEvaluationAllowed) {
+      return noSelection(
+        symbol,
+        signal,
+        null,
+        null,
+        maxBudget,
+        [
+          `Signal engine returned ${signal.signal}`,
+          'Trade evaluation is not allowed under the current session conditions; no contract was selected.',
+        ],
+        signal.riskFlags,
+      );
+    }
+
     const optionType = optionTypeFor(signal.signal);
     if (optionType === null) {
-      return noSelection(symbol, signal, null, null, maxBudget, [
-        `Signal engine returned ${signal.signal}; option contract selection was skipped.`,
-      ]);
+      return noSelection(
+        symbol,
+        signal,
+        null,
+        null,
+        maxBudget,
+        [
+          `Signal engine returned ${signal.signal}; option contract selection was skipped.`,
+        ],
+        signal.riskFlags,
+      );
     }
 
     const underlyingPrice = await this.marketDataService.getLatestPrice(symbol);
@@ -105,6 +131,7 @@ export class OptionSelectionService {
             ? `No ${optionType} contracts met the minimum selection criteria.`
             : `No qualifying ${optionType} contract was available within the $${maxBudget} maximum trade budget`,
         ],
+        signal.riskFlags,
       );
     }
 
@@ -121,6 +148,7 @@ export class OptionSelectionService {
       signal: signal.signal,
       optionType,
       status: OptionSelectionStatus.SELECTED,
+      tradeEvaluationAllowed: true,
       confidence: this.computeConfidence(selected, candidates, signal),
       maxBudget,
       underlyingPrice,
@@ -133,7 +161,10 @@ export class OptionSelectionService {
         `Selected ${selected.symbol}: ${selected.moneyness}, ${selected.daysToExpiration} DTE, delta ${selected.delta ?? 'n/a'}`,
         `Estimated cost $${selected.estimatedContractCost} from ${selected.premiumPriceSource} price ${selected.premiumPriceUsed}`,
       ],
-      riskFlags: selectionRiskFlags(selected, executionReady),
+      riskFlags: [
+        ...selectionRiskFlags(selected, executionReady),
+        ...signal.riskFlags,
+      ],
       executionReady,
     };
   }
@@ -241,6 +272,7 @@ function noSelection(
   underlyingPrice: number | null,
   maxBudget: number,
   reasoning: string[],
+  riskFlags: string[] = [],
 ): OptionSelectionResult {
   return {
     symbol,
@@ -248,13 +280,14 @@ function noSelection(
     signal: signal.signal,
     optionType,
     status: OptionSelectionStatus.NO_SELECTION,
+    tradeEvaluationAllowed: signal.tradeEvaluationAllowed,
     confidence: 0,
     maxBudget,
     underlyingPrice,
     selectedContract: null,
     alternatives: [],
     reasoning,
-    riskFlags: [],
+    riskFlags,
     executionReady: false,
   };
 }

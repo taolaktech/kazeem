@@ -7,6 +7,15 @@ import { IndicatorService } from './indicators/indicator.service.js';
 import { RegimeService } from './regime.service.js';
 import { buildCandles } from './testing/candle-factory.js';
 import type { MarketCandle } from './interfaces/market-data.interface.js';
+import { buildSessionSnapshot } from '../../test/factories/session-snapshot.js';
+import {
+  candleSeries,
+  easternInstant,
+} from '../../test/factories/session-candles.js';
+import {
+  MarketSession,
+  SessionMaturity,
+} from '../market-data/session/market-session.enum.js';
 
 const CANDLE_COUNT = 150;
 
@@ -62,19 +71,23 @@ function conflictingCandles(): MarketCandle[] {
   });
 }
 
+function bullishSnapshot() {
+  return buildSessionSnapshot({ currentStep: 0.08, previousStep: 0.03 });
+}
+
 describe('RegimeService', () => {
   let service: RegimeService;
-  const getRecentMinuteCandles = vi.fn();
+  const getSessionSnapshot = vi.fn();
 
   beforeEach(async () => {
-    getRecentMinuteCandles.mockReset();
+    getSessionSnapshot.mockReset();
     const moduleRef: TestingModule = await Test.createTestingModule({
       providers: [
         IndicatorService,
         RegimeService,
         {
           provide: MarketDataService,
-          useValue: { getRecentMinuteCandles },
+          useValue: { getSessionSnapshot },
         },
       ],
     }).compile();
@@ -209,12 +222,126 @@ describe('RegimeService', () => {
     expect(result.dataQuality.warnings.length).toBeGreaterThan(0);
   });
 
-  it('classifies a symbol from on-demand market data', async () => {
-    getRecentMinuteCandles.mockResolvedValue(bullishCandles());
+  it('classifies a symbol from an on-demand session snapshot', async () => {
+    getSessionSnapshot.mockResolvedValue(bullishSnapshot());
 
-    const result = await service.classifySymbol('SPY', 300);
+    const result = await service.classifySymbol('SPY', 80);
 
-    expect(getRecentMinuteCandles).toHaveBeenCalledWith('SPY', 300);
+    expect(getSessionSnapshot).toHaveBeenCalledWith('SPY', {
+      maxIndicatorCandles: 80,
+    });
     expect(result.primaryRegime).toBe(MarketRegime.TRENDING_BULLISH);
+    expect(result.tradeEvaluationAllowed).toBe(true);
+    expect(result.sessionContext?.timeframeMinutes).toBe(3);
+  });
+  it('keeps EMA50 valid at the open using previous-session warm-up', async () => {
+    const snapshot = buildSessionSnapshot({
+      atHour: 9,
+      atMinute: 45,
+      currentCandles: 5,
+    });
+
+    const result = service.classifySession('SPY', snapshot);
+
+    expect(result.features.ema50).toBeTypeOf('number');
+    expect(Number.isFinite(result.features.ema50 ?? NaN)).toBe(true);
+    expect(result.sessionContext?.currentSessionCandleCount).toBe(5);
+    expect(result.sessionContext?.sessionMaturity).toBe(SessionMaturity.EARLY);
+    expect(result.tradeEvaluationAllowed).toBe(true);
+  });
+
+  it('classifies during the opening settlement but blocks trade evaluation', async () => {
+    const snapshot = buildSessionSnapshot({
+      atHour: 9,
+      atMinute: 39,
+      currentCandles: 3,
+    });
+
+    const result = service.classifySession('SPY', snapshot);
+
+    expect(result.sessionContext?.marketSession).toBe(
+      MarketSession.OPENING_SETTLEMENT,
+    );
+    expect(result.primaryRegime).toBeDefined();
+    expect(result.tradeEvaluationAllowed).toBe(false);
+    expect(result.riskFlags?.some((flag) => flag.includes('settlement'))).toBe(
+      true,
+    );
+  });
+
+  it('does not let a bearish previous session override a strong bullish tape', async () => {
+    const snapshot = buildSessionSnapshot({
+      previousStep: -0.03,
+      currentStep: 0.12,
+      currentCandles: 30,
+    });
+
+    const result = service.classifySession('SPY', snapshot);
+
+    expect(result.scores[MarketRegime.TRENDING_BULLISH]).toBeGreaterThan(
+      result.scores[MarketRegime.TRENDING_BEARISH],
+    );
+  });
+
+  it('weights current-session evidence more heavily as the session matures', async () => {
+    const early = service.classifySession(
+      'SPY',
+      buildSessionSnapshot({
+        atHour: 9,
+        atMinute: 45,
+        currentCandles: 5,
+        currentStep: 0.12,
+      }),
+    );
+    const established = service.classifySession(
+      'SPY',
+      buildSessionSnapshot({
+        atHour: 11,
+        atMinute: 0,
+        currentCandles: 30,
+        currentStep: 0.12,
+      }),
+    );
+
+    expect(established.scores[MarketRegime.TRENDING_BULLISH]).toBeGreaterThan(
+      early.scores[MarketRegime.TRENDING_BULLISH],
+    );
+    expect(established.confidence).toBeGreaterThanOrEqual(early.confidence);
+  });
+
+  it('treats premarket as context rather than an override', async () => {
+    const premarket = candleSeries(easternInstant(2026, 8, 28, 8, 0), 10, {
+      timeframeMinutes: 3,
+      startPrice: 101,
+      step: -0.08,
+    });
+
+    const withPremarket = service.classifySession(
+      'SPY',
+      buildSessionSnapshot({
+        premarket,
+        currentStep: 0.12,
+        currentCandles: 30,
+      }),
+    );
+
+    expect(withPremarket.premarketContext?.available).toBe(true);
+    expect(withPremarket.premarketContext?.trendDirection).toBe('BEARISH');
+    expect(withPremarket.scores[MarketRegime.TRENDING_BULLISH]).toBeGreaterThan(
+      withPremarket.scores[MarketRegime.TRENDING_BEARISH],
+    );
+  });
+
+  it('never emits NaN or Infinity in session classification output', async () => {
+    const result = service.classifySession('SPY', bullishSnapshot());
+
+    const numbers = [
+      result.confidence,
+      ...Object.values(result.scores),
+      ...Object.values(result.features).filter(
+        (value): value is number => typeof value === 'number',
+      ),
+    ];
+    expect(numbers.every((value) => Number.isFinite(value))).toBe(true);
   });
 });

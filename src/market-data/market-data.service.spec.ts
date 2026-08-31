@@ -2,13 +2,20 @@ import { ConfigService } from '@nestjs/config';
 import { Test, type TestingModule } from '@nestjs/testing';
 import { HttpException, NotFoundException } from '@nestjs/common';
 import {
+  MARKET_SESSION_CONFIG_KEY,
   MASSIVE_CONFIG_KEY,
+  type MarketSessionConfig,
   type MassiveConfig,
 } from './market-data.config.js';
 import { MarketDataService } from './market-data.service.js';
 import { MassiveHttpClient } from './massive-http.client.js';
 import { MassiveService } from './massive.service.js';
 import type { MassiveAggregate } from './massive.types.js';
+import type { MarketCandle } from './interfaces/market-candle.interface.js';
+import {
+  candleSeries,
+  easternInstant,
+} from '../../test/factories/session-candles.js';
 
 const config: MassiveConfig = {
   apiKey: 'test-key',
@@ -16,6 +23,12 @@ const config: MassiveConfig = {
   requestTimeoutMs: 1_000,
   maxPages: 3,
   regularHoursOnly: false,
+};
+
+const sessionConfig: MarketSessionConfig = {
+  primaryTimeframeMinutes: 3,
+  maxIndicatorCandles: 80,
+  openingSettlementMinutes: 15,
 };
 
 /** 2026-08-28 (Friday) 14:00 UTC = 10:00 ET, inside the regular session. */
@@ -33,6 +46,17 @@ function aggregate(
     c: 100.5,
     v: 1_000,
     ...overrides,
+  };
+}
+
+function toAggregate(candle: MarketCandle): MassiveAggregate {
+  return {
+    t: candle.timestamp.getTime(),
+    o: candle.open,
+    h: candle.high,
+    l: candle.low,
+    c: candle.close,
+    v: candle.volume,
   };
 }
 
@@ -61,10 +85,13 @@ describe('MarketDataService', () => {
           provide: ConfigService,
           useValue: {
             getOrThrow: (key: string) => {
-              if (key !== MASSIVE_CONFIG_KEY) {
-                throw new Error(`Unexpected config key ${key}`);
+              if (key === MASSIVE_CONFIG_KEY) {
+                return config;
               }
-              return config;
+              if (key === MARKET_SESSION_CONFIG_KEY) {
+                return sessionConfig;
+              }
+              throw new Error(`Unexpected config key ${key}`);
             },
           },
         },
@@ -83,7 +110,7 @@ describe('MarketDataService', () => {
       jsonResponse({ status: 'OK', results: [aggregate(0), aggregate(1)] }),
     );
 
-    const candles = await service.getRecentMinuteCandles('spy', 500);
+    const candles = await service.getRecentCandles('spy', 500);
 
     expect(candles).toHaveLength(2);
     expect(candles[0]).toEqual({
@@ -95,7 +122,7 @@ describe('MarketDataService', () => {
       volume: 1_000,
     });
     const requestedUrl = String(fetchMock.mock.calls[0][0]);
-    expect(requestedUrl).toContain('/v2/aggs/ticker/SPY/range/1/minute/');
+    expect(requestedUrl).toContain('/v2/aggs/ticker/SPY/range/3/minute/');
   });
 
   it('sorts candles oldest to newest', async () => {
@@ -103,7 +130,7 @@ describe('MarketDataService', () => {
       jsonResponse({ results: [aggregate(5), aggregate(1), aggregate(3)] }),
     );
 
-    const candles = await service.getRecentMinuteCandles('SPY');
+    const candles = await service.getRecentCandles('SPY');
 
     expect(candles.map((candle) => candle.timestamp.getTime())).toEqual([
       BASE_TIMESTAMP + 60_000,
@@ -119,7 +146,7 @@ describe('MarketDataService', () => {
       }),
     );
 
-    const candles = await service.getRecentMinuteCandles('SPY');
+    const candles = await service.getRecentCandles('SPY');
 
     expect(candles).toHaveLength(2);
     expect(candles[0].close).toBe(100.9);
@@ -141,7 +168,7 @@ describe('MarketDataService', () => {
       }),
     );
 
-    const candles = await service.getRecentMinuteCandles('SPY');
+    const candles = await service.getRecentCandles('SPY');
 
     expect(candles).toHaveLength(1);
     expect(candles[0].timestamp.getTime()).toBe(BASE_TIMESTAMP);
@@ -154,7 +181,7 @@ describe('MarketDataService', () => {
       }),
     );
 
-    const candles = await service.getRecentMinuteCandles('SPY', 60);
+    const candles = await service.getRecentCandles('SPY', 60);
 
     expect(candles).toHaveLength(10);
     expect(candles.at(-1)?.timestamp.getTime()).toBe(
@@ -172,7 +199,7 @@ describe('MarketDataService', () => {
       )
       .mockResolvedValueOnce(jsonResponse({ results: [aggregate(1)] }));
 
-    const candles = await service.getRecentMinuteCandles('SPY');
+    const candles = await service.getRecentCandles('SPY');
 
     expect(fetchMock).toHaveBeenCalledTimes(2);
     expect(candles).toHaveLength(2);
@@ -181,10 +208,10 @@ describe('MarketDataService', () => {
   it('throws 404 when the provider returns no usable data', async () => {
     fetchMock.mockResolvedValue(jsonResponse({ status: 'OK', results: [] }));
 
-    await expect(service.getRecentMinuteCandles('INVALID')).rejects.toThrow(
+    await expect(service.getRecentCandles('INVALID')).rejects.toThrow(
       NotFoundException,
     );
-    await expect(service.getRecentMinuteCandles('INVALID')).rejects.toThrow(
+    await expect(service.getRecentCandles('INVALID')).rejects.toThrow(
       'No market data found for symbol INVALID',
     );
   });
@@ -198,7 +225,7 @@ describe('MarketDataService', () => {
   ])('maps provider HTTP %i to %i', async (providerStatus, expected) => {
     fetchMock.mockResolvedValue(jsonResponse({}, providerStatus));
 
-    await expect(service.getRecentMinuteCandles('SPY')).rejects.toMatchObject({
+    await expect(service.getRecentCandles('SPY')).rejects.toMatchObject({
       status: expected,
     });
   });
@@ -207,7 +234,7 @@ describe('MarketDataService', () => {
     fetchMock.mockResolvedValue(jsonResponse({}, 401));
 
     const error = await service
-      .getRecentMinuteCandles('SPY')
+      .getRecentCandles('SPY')
       .catch((caught: HttpException) => caught);
 
     expect(
@@ -220,7 +247,7 @@ describe('MarketDataService', () => {
       Object.assign(new Error('timed out'), { name: 'TimeoutError' }),
     );
 
-    await expect(service.getRecentMinuteCandles('SPY')).rejects.toMatchObject({
+    await expect(service.getRecentCandles('SPY')).rejects.toMatchObject({
       status: 503,
     });
   });
@@ -228,8 +255,44 @@ describe('MarketDataService', () => {
   it('rejects malformed provider payloads', async () => {
     fetchMock.mockResolvedValue(jsonResponse({ results: 'not-an-array' }));
 
-    await expect(service.getRecentMinuteCandles('SPY')).rejects.toMatchObject({
+    await expect(service.getRecentCandles('SPY')).rejects.toMatchObject({
       status: 502,
     });
+  });
+  it('partitions a single provider request into a session snapshot', async () => {
+    const premarket = candleSeries(easternInstant(2026, 8, 28, 8, 0), 4, {
+      timeframeMinutes: 3,
+      startPrice: 108,
+    });
+    const previous = candleSeries(easternInstant(2026, 8, 27, 9, 30), 130, {
+      timeframeMinutes: 3,
+      startPrice: 100,
+      step: 0.02,
+    });
+    const current = candleSeries(easternInstant(2026, 8, 28, 9, 30), 5, {
+      timeframeMinutes: 3,
+      startPrice: 110,
+    });
+
+    fetchMock.mockResolvedValue(
+      jsonResponse({
+        status: 'OK',
+        results: [...previous, ...premarket, ...current].map(toAggregate),
+      }),
+    );
+
+    const snapshot = await service.getSessionSnapshot('spy', {
+      now: easternInstant(2026, 8, 28, 9, 45),
+    });
+
+    expect(snapshot.symbol).toBe('SPY');
+    expect(snapshot.context.timeframeMinutes).toBe(3);
+    expect(snapshot.context.currentSessionCandleCount).toBe(5);
+    expect(snapshot.context.premarketCandleCount).toBe(4);
+    expect(snapshot.context.indicatorCandleCount).toBe(80);
+    expect(snapshot.context.tradeEvaluationAllowed).toBe(true);
+    expect(String(fetchMock.mock.calls[0][0])).toContain(
+      '/v2/aggs/ticker/SPY/range/3/minute/',
+    );
   });
 });

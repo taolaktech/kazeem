@@ -8,6 +8,7 @@ import type {
   RegimeDataQuality,
   RegimeSecondaryCharacteristics,
 } from '../../regime/interfaces/regime-result.interface.js';
+import type { SessionSnapshotContext } from '../../market-data/session/session-context.interface.js';
 
 export interface RegimeOverrides {
   symbol?: string;
@@ -16,6 +17,9 @@ export interface RegimeOverrides {
   features?: Partial<RegimeFeatures>;
   secondaryCharacteristics?: Partial<RegimeSecondaryCharacteristics>;
   dataQuality?: Partial<RegimeDataQuality>;
+  sessionContext?: SessionSnapshotContext;
+  tradeEvaluationAllowed?: boolean;
+  riskFlags?: string[];
 }
 
 /** Builds a regime classification fixture; no market data provider involved. */
@@ -62,6 +66,9 @@ export function buildRegime(
       warnings: [],
       ...overrides.dataQuality,
     },
+    sessionContext: overrides.sessionContext,
+    tradeEvaluationAllowed: overrides.tradeEvaluationAllowed,
+    riskFlags: overrides.riskFlags,
   };
 }
 
