@@ -11,6 +11,7 @@ import {
 import type { RawNewsArticle } from '../interfaces/news-article.interface.js';
 import { parseRssItems, type RssItem } from '../utils/rss.util.js';
 import type {
+  NewsFetchResult,
   NewsProvider,
   NewsQueryOptions,
 } from './news-provider.interface.js';
@@ -42,7 +43,7 @@ export class SeekingAlphaRssProvider implements NewsProvider {
   async getRecentNews(
     symbol: string,
     options: NewsQueryOptions,
-  ): Promise<RawNewsArticle[]> {
+  ): Promise<NewsFetchResult> {
     if (!this.enabled) {
       throw new ServiceUnavailableException(
         'Seeking Alpha RSS provider is disabled.',
@@ -54,32 +55,48 @@ export class SeekingAlphaRssProvider implements NewsProvider {
       `${this.config.seekingAlphaBaseUrl}${SYMBOL_FEED_PATH}/${encodeURIComponent(symbol.toUpperCase())}.xml`,
     ];
 
-    const responses = await Promise.allSettled(
+    const [general, tickerSpecific] = await Promise.allSettled(
       feeds.map((feed) => this.fetchFeed(feed)),
     );
 
-    const failures = responses.filter(
-      (response) => response.status === 'rejected',
-    );
-    if (failures.length === feeds.length) {
+    if (general.status === 'rejected' && tickerSpecific.status === 'rejected') {
       throw new ServiceUnavailableException(
         'Seeking Alpha RSS feeds are unavailable.',
       );
     }
 
-    const articles = responses
-      .flatMap((response) =>
-        response.status === 'fulfilled' ? parseRssItems(response.value) : [],
-      )
-      .map((item) => this.toArticle(item))
-      .filter((article): article is RawNewsArticle => article !== null)
-      .filter((article) => article.publishedAt >= options.since)
-      .slice(0, options.limit);
+    const generalArticles = this.toArticles(general, options.since);
+    const tickerArticles = this.toArticles(tickerSpecific, options.since);
+    const articles = [...tickerArticles, ...generalArticles].slice(
+      0,
+      options.limit,
+    );
 
     this.logger.log(
-      `seeking-alpha returned ${articles.length} usable article(s) for ${symbol}`,
+      `seeking-alpha returned ${articles.length} usable article(s) for ${symbol} ` +
+        `(ticker=${tickerArticles.length}, general=${generalArticles.length})`,
     );
-    return articles;
+    return {
+      articles,
+      metrics: {
+        requestsMade: feeds.length,
+        tickerSpecificCount: tickerArticles.length,
+        generalMarketCount: generalArticles.length,
+      },
+    };
+  }
+
+  private toArticles(
+    response: PromiseSettledResult<string>,
+    since: Date,
+  ): RawNewsArticle[] {
+    if (response.status === 'rejected') {
+      return [];
+    }
+    return parseRssItems(response.value)
+      .map((item) => this.toArticle(item))
+      .filter((article): article is RawNewsArticle => article !== null)
+      .filter((article) => article.publishedAt >= since);
   }
 
   private async fetchFeed(url: string): Promise<string> {

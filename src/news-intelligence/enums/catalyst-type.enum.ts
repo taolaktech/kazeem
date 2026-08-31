@@ -23,10 +23,14 @@ export enum CatalystType {
   MERGER_ACQUISITION = 'MERGER_ACQUISITION',
 
   GEOPOLITICAL = 'GEOPOLITICAL',
+  MILITARY_CONFLICT = 'MILITARY_CONFLICT',
   TARIFFS = 'TARIFFS',
 
   ENERGY = 'ENERGY',
+  OIL_SUPPLY_DISRUPTION = 'OIL_SUPPLY_DISRUPTION',
   CREDIT = 'CREDIT',
+  BANKING_STRESS = 'BANKING_STRESS',
+  SYSTEMIC_RISK = 'SYSTEMIC_RISK',
 
   MARKET_MOVING = 'MARKET_MOVING',
 
@@ -44,7 +48,11 @@ export const MACRO_CATALYSTS: readonly CatalystType[] = [
   CatalystType.GDP,
   CatalystType.TREASURY_YIELDS,
   CatalystType.GEOPOLITICAL,
+  CatalystType.MILITARY_CONFLICT,
   CatalystType.TARIFFS,
+  CatalystType.OIL_SUPPLY_DISRUPTION,
+  CatalystType.BANKING_STRESS,
+  CatalystType.SYSTEMIC_RISK,
 ];
 
 /** Catalysts that describe a sector-wide theme. */

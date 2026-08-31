@@ -14,10 +14,13 @@ import {
   LOW_CONFIDENCE_THRESHOLD,
   MAX_DOMINANT_CATALYSTS,
   MIN_DIRECTIONAL_WEIGHT,
+  MIN_RISK_BIAS_WEIGHT,
   PROVIDER_FETCH_MULTIPLIER,
+  RISK_DOMINANCE_THRESHOLD,
 } from './constants/news-intelligence-thresholds.js';
 import { getSymbolContext } from './constants/symbol-context.js';
 import { CatalystType } from './enums/catalyst-type.enum.js';
+import { MarketRiskBias } from './enums/market-risk-bias.enum.js';
 import { NewsImpact } from './enums/news-impact.enum.js';
 import { NewsSentiment } from './enums/news-sentiment.enum.js';
 import type {
@@ -32,6 +35,7 @@ import {
 } from './providers/news-provider.interface.js';
 import {
   classifyImpact,
+  classifyRiskBias,
   classifySentiment,
   detectCatalysts,
   detectScope,
@@ -48,7 +52,17 @@ export interface NewsIntelligenceOptions {
 
 interface WeightedArticle {
   article: NewsArticle;
+  /** Directional weight; zero unless the article asserts a direction. */
   weight: number;
+  /** Risk-environment weight, independent of direction. */
+  riskWeight: number;
+}
+
+interface RiskAggregate {
+  bias: MarketRiskBias;
+  confidence: number;
+  conflict: boolean;
+  reasoning: string[];
 }
 
 @Injectable()
@@ -109,7 +123,10 @@ export class NewsIntelligenceService {
       this.providers.map(async (provider) => {
         const startedAt = Date.now();
         try {
-          const articles = await provider.getRecentNews(symbol, queryOptions);
+          const { articles, metrics } = await provider.getRecentNews(
+            symbol,
+            queryOptions,
+          );
           const durationMs = Date.now() - startedAt;
           this.logger.log(
             `${provider.name} returned ${articles.length} article(s) for ${symbol} in ${durationMs}ms`,
@@ -118,6 +135,7 @@ export class NewsIntelligenceService {
             name: provider.name,
             articleCount: articles.length,
             success: true,
+            ...metrics,
             articles,
             durationMs,
           };
@@ -132,6 +150,9 @@ export class NewsIntelligenceService {
             name: provider.name,
             articleCount: 0,
             success: false,
+            requestsMade: 1,
+            tickerSpecificCount: 0,
+            generalMarketCount: 0,
             articles: [],
             durationMs,
           };
@@ -162,17 +183,35 @@ export class NewsIntelligenceService {
       relevance.mentionsSymbolDirectly,
     );
     const sentiment = classifySentiment(searchText, article.providerSentiment);
-    const impact = classifyImpact(catalysts, relevance.score);
+    const riskBias = classifyRiskBias(searchText);
+    const impact = classifyImpact(
+      catalysts,
+      relevance.score,
+      scope,
+      recency,
+      relevance.mentionsSymbolDirectly,
+    );
 
     return {
       ...article,
       scope,
       sentiment: sentiment.sentiment,
       sentimentConfidence: sentiment.confidence,
+      marketRiskBias: riskBias.bias,
+      riskBiasConfidence: riskBias.confidence,
       impact,
       relevanceScore: relevance.score,
       catalystTypes: catalysts,
-      reasoning: [...relevance.reasoning, ...sentiment.reasoning],
+      reasoning: [
+        ...relevance.reasoning,
+        ...riskBias.reasoning,
+        ...sentiment.reasoning,
+        ...(impact === NewsImpact.HIGH
+          ? [
+              `Classified as high-impact ${riskBias.bias === MarketRiskBias.UNKNOWN ? 'market' : riskBias.bias} context`,
+            ]
+          : []),
+      ],
     };
   }
 
@@ -187,6 +226,9 @@ export class NewsIntelligenceService {
       name: fetch.name,
       articleCount: fetch.articleCount,
       success: fetch.success,
+      requestsMade: fetch.requestsMade,
+      tickerSpecificCount: fetch.tickerSpecificCount,
+      generalMarketCount: fetch.generalMarketCount,
     }));
     const reasoning: string[] = [];
     const riskFlags: string[] = [];
@@ -194,6 +236,10 @@ export class NewsIntelligenceService {
     for (const fetch of fetches) {
       if (!fetch.success) {
         riskFlags.push(`News provider unavailable: ${fetch.name}`);
+      } else if (fetch.tickerSpecificCount === 0) {
+        riskFlags.push(
+          `News provider returned no ticker-specific articles: ${fetch.name}`,
+        );
       }
     }
 
@@ -205,6 +251,9 @@ export class NewsIntelligenceService {
         lookbackHours,
         overallSentiment: NewsSentiment.UNKNOWN,
         sentimentConfidence: 0,
+        marketRiskBias: MarketRiskBias.UNKNOWN,
+        riskBiasConfidence: 0,
+        riskBiasConflict: false,
         newsImpact: NewsImpact.LOW,
         articleCount: 0,
         highImpactArticleCount: 0,
@@ -220,16 +269,19 @@ export class NewsIntelligenceService {
       };
     }
 
-    const weighted: WeightedArticle[] = articles.map((article) => ({
-      article,
-      weight:
+    const weighted: WeightedArticle[] = articles.map((article) => {
+      const base =
         article.relevanceScore < AGGREGATION_RELEVANCE_FLOOR
           ? 0
           : IMPACT_WEIGHTS[article.impact] *
             article.relevanceScore *
-            recencyWeight(article.publishedAt, now) *
-            article.sentimentConfidence,
-    }));
+            recencyWeight(article.publishedAt, now);
+      return {
+        article,
+        weight: base * article.sentimentConfidence,
+        riskWeight: base * article.riskBiasConfidence,
+      };
+    });
 
     let bullishWeight = 0;
     let bearishWeight = 0;
@@ -288,6 +340,15 @@ export class NewsIntelligenceService {
           ? NewsImpact.MEDIUM
           : NewsImpact.LOW;
 
+    const risk = this.aggregateRisk(weighted);
+    reasoning.push(...risk.reasoning);
+    if (risk.conflict) {
+      riskFlags.push('Conflicting high-impact risk narratives detected');
+    }
+    if (risk.bias === MarketRiskBias.RISK_OFF) {
+      riskFlags.push('Recent risk-off catalyst detected');
+    }
+
     const dominantCatalysts = this.rankCatalysts(weighted);
 
     reasoning.push(
@@ -318,6 +379,9 @@ export class NewsIntelligenceService {
       lookbackHours,
       overallSentiment,
       sentimentConfidence,
+      marketRiskBias: risk.bias,
+      riskBiasConfidence: risk.confidence,
+      riskBiasConflict: risk.conflict,
       newsImpact,
       articleCount: articles.length,
       highImpactArticleCount: highImpact.length,
@@ -332,6 +396,71 @@ export class NewsIntelligenceService {
       reasoning,
       riskFlags: [...new Set(riskFlags)],
       providers,
+    };
+  }
+
+  /**
+   * Risk environment weighted by impact, relevance, recency and rule
+   * confidence, never by article count: one high-impact RISK_OFF story
+   * outweighs a pile of irrelevant filler.
+   */
+  private aggregateRisk(weighted: WeightedArticle[]): RiskAggregate {
+    let riskOff = 0;
+    let riskOn = 0;
+    for (const { article, riskWeight } of weighted) {
+      if (article.marketRiskBias === MarketRiskBias.RISK_OFF) {
+        riskOff += riskWeight;
+      } else if (article.marketRiskBias === MarketRiskBias.RISK_ON) {
+        riskOn += riskWeight;
+      }
+    }
+
+    const total = riskOff + riskOn;
+    if (total === 0) {
+      return {
+        bias: MarketRiskBias.UNKNOWN,
+        confidence: 0,
+        conflict: false,
+        reasoning: [
+          'No recent story carried a decisive risk-on or risk-off signal',
+        ],
+      };
+    }
+
+    const dominance = Math.max(riskOff, riskOn) / total;
+    const conflict =
+      dominance < RISK_DOMINANCE_THRESHOLD &&
+      Math.min(riskOff, riskOn) >= MIN_RISK_BIAS_WEIGHT;
+
+    if (conflict) {
+      return {
+        bias: MarketRiskBias.NEUTRAL,
+        confidence: 0,
+        conflict: true,
+        reasoning: [
+          'Conflicting high-impact risk narratives detected in recent news',
+        ],
+      };
+    }
+
+    if (total < MIN_RISK_BIAS_WEIGHT) {
+      return {
+        bias: MarketRiskBias.NEUTRAL,
+        confidence: 0,
+        conflict: false,
+        reasoning: ['Recent risk catalysts are too weak to shift the regime'],
+      };
+    }
+
+    const bias =
+      riskOff > riskOn ? MarketRiskBias.RISK_OFF : MarketRiskBias.RISK_ON;
+    return {
+      bias,
+      confidence: roundTo(Math.min(1, dominance * Math.min(1, total))),
+      conflict: false,
+      reasoning: [
+        `Weighted news flow describes a ${bias} environment (${roundTo(riskOff)} risk-off vs ${roundTo(riskOn)} risk-on weight)`,
+      ],
     };
   }
 
@@ -375,6 +504,18 @@ export class NewsIntelligenceService {
     }
     if (has(CatalystType.GEOPOLITICAL) || has(CatalystType.TARIFFS)) {
       riskFlags.push('Recent geopolitical catalyst detected');
+    }
+    if (has(CatalystType.MILITARY_CONFLICT)) {
+      riskFlags.push('Military escalation detected');
+    }
+    if (has(CatalystType.OIL_SUPPLY_DISRUPTION)) {
+      riskFlags.push('Potential energy supply disruption detected');
+    }
+    if (has(CatalystType.BANKING_STRESS) || has(CatalystType.CREDIT)) {
+      riskFlags.push('Banking or credit stress catalyst detected');
+    }
+    if (has(CatalystType.SYSTEMIC_RISK)) {
+      riskFlags.push('Systemic financial risk catalyst detected');
     }
   }
 }

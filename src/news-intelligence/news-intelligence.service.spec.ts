@@ -32,7 +32,14 @@ describe('NewsIntelligenceService', () => {
 
     expect(result.articleCount).toBe(1);
     expect(result.providers).toEqual([
-      { name: 'massive', articleCount: 1, success: true },
+      {
+        name: 'massive',
+        articleCount: 1,
+        success: true,
+        requestsMade: 1,
+        tickerSpecificCount: 1,
+        generalMarketCount: 0,
+      },
     ]);
     expect(result.articles[0].catalystTypes).toContain(CatalystType.EARNINGS);
   });

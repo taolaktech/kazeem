@@ -1,5 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { MassiveHttpClient } from '../../market-data/massive-http.client.js';
+import { getSymbolContext } from '../constants/symbol-context.js';
 import { NewsSentiment } from '../enums/news-sentiment.enum.js';
 import type { RawNewsArticle } from '../interfaces/news-article.interface.js';
 import type {
@@ -7,6 +8,7 @@ import type {
   MassiveNewsResponse,
 } from './massive-news.types.js';
 import type {
+  NewsFetchResult,
   NewsProvider,
   NewsQueryOptions,
 } from './news-provider.interface.js';
@@ -31,7 +33,14 @@ function toText(value: string | undefined): string | null {
   return trimmed ? trimmed : null;
 }
 
-/** Symbol-specific and company news from Massive's reference news endpoint. */
+/**
+ * Company and general-market news from Massive's reference news endpoint.
+ * `ticker` is an optional filter on that endpoint, so the same call without it
+ * returns the latest cross-market stories; that untargeted mode is used only
+ * for broad index proxies (which are rarely tagged on individual articles) and
+ * as a fallback when the ticker query comes back empty. Relevance scoring and
+ * deduplication downstream decide what actually survives.
+ */
 @Injectable()
 export class MassiveNewsProvider implements NewsProvider {
   readonly name = 'massive';
@@ -42,9 +51,49 @@ export class MassiveNewsProvider implements NewsProvider {
   async getRecentNews(
     symbol: string,
     options: NewsQueryOptions,
+  ): Promise<NewsFetchResult> {
+    const tickerArticles = await this.query(symbol, options, symbol);
+    let requestsMade = 1;
+    let generalArticles: RawNewsArticle[] = [];
+
+    const wantsGeneral =
+      getSymbolContext(symbol).broadMarket || tickerArticles.length === 0;
+    if (wantsGeneral) {
+      generalArticles = await this.query(symbol, options, null);
+      requestsMade += 1;
+    }
+
+    const seen = new Set(tickerArticles.map((article) => article.id));
+    const merged = [
+      ...tickerArticles,
+      ...generalArticles.filter((article) => !seen.has(article.id)),
+    ];
+
+    this.logger.log(
+      `massive returned ${merged.length} usable article(s) for ${symbol} ` +
+        `(ticker=${tickerArticles.length}, general=${generalArticles.length}, requests=${requestsMade})`,
+    );
+
+    return {
+      articles: merged.slice(0, options.limit),
+      metrics: {
+        requestsMade,
+        tickerSpecificCount: tickerArticles.length,
+        generalMarketCount: generalArticles.length,
+      },
+    };
+  }
+
+  /** One page of news; `ticker` null asks for the latest general-market news. */
+  private async query(
+    symbol: string,
+    options: NewsQueryOptions,
+    ticker: string | null,
   ): Promise<RawNewsArticle[]> {
     const url = new URL(NEWS_PATH, `${this.httpClient.config.restBaseUrl}/`);
-    url.searchParams.set('ticker', symbol);
+    if (ticker) {
+      url.searchParams.set('ticker', ticker);
+    }
     url.searchParams.set('published_utc.gte', options.since.toISOString());
     url.searchParams.set('order', 'desc');
     url.searchParams.set('sort', 'published_utc');
@@ -52,18 +101,12 @@ export class MassiveNewsProvider implements NewsProvider {
 
     const payload = (await this.httpClient.getJson(
       url.toString(),
-      `${symbol} news`,
+      ticker ? `${ticker} news` : 'market news',
     )) as MassiveNewsResponse | undefined;
 
-    const items = payload?.results ?? [];
-    const articles = items
+    return (payload?.results ?? [])
       .map((item) => this.toArticle(item, symbol))
       .filter((article): article is RawNewsArticle => article !== null);
-
-    this.logger.log(
-      `massive returned ${articles.length} usable article(s) for ${symbol}`,
-    );
-    return articles;
   }
 
   private toArticle(

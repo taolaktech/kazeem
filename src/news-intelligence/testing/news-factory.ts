@@ -1,5 +1,6 @@
 import type { RawNewsArticle } from '../interfaces/news-article.interface.js';
 import type {
+  NewsFetchResult,
   NewsProvider,
   NewsQueryOptions,
 } from '../providers/news-provider.interface.js';
@@ -27,20 +28,30 @@ export function buildRawArticle(
 export function stubProvider(
   name: string,
   articles: RawNewsArticle[],
+  metrics: Partial<NewsFetchResult['metrics']> = {},
 ): NewsProvider {
   return {
     name,
     getRecentNews: (
       _symbol: string,
       _options: NewsQueryOptions,
-    ): Promise<RawNewsArticle[]> => Promise.resolve(articles),
+    ): Promise<NewsFetchResult> =>
+      Promise.resolve({
+        articles,
+        metrics: {
+          requestsMade: 1,
+          tickerSpecificCount: articles.length,
+          generalMarketCount: 0,
+          ...metrics,
+        },
+      }),
   };
 }
 
 export function failingProvider(name: string, message: string): NewsProvider {
   return {
     name,
-    getRecentNews: (): Promise<RawNewsArticle[]> =>
+    getRecentNews: (): Promise<NewsFetchResult> =>
       Promise.reject(new Error(message)),
   };
 }

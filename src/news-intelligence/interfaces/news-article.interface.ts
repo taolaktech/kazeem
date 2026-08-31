@@ -1,4 +1,5 @@
 import type { CatalystType } from '../enums/catalyst-type.enum.js';
+import type { MarketRiskBias } from '../enums/market-risk-bias.enum.js';
 import type { NewsImpact } from '../enums/news-impact.enum.js';
 import type { NewsScope } from '../enums/news-scope.enum.js';
 import type { NewsSentiment } from '../enums/news-sentiment.enum.js';
@@ -29,6 +30,9 @@ export interface NewsArticle extends RawNewsArticle {
   scope: NewsScope;
   sentiment: NewsSentiment;
   sentimentConfidence: number;
+  /** Risk environment implied by the story; never derived from sentiment. */
+  marketRiskBias: MarketRiskBias;
+  riskBiasConfidence: number;
   impact: NewsImpact;
   relevanceScore: number;
   catalystTypes: CatalystType[];
