@@ -6,6 +6,11 @@ export interface SymbolContext {
   label: string;
   /** True for broad index proxies, where macro news is directly relevant. */
   broadMarket: boolean;
+  /**
+   * True for instruments that track uncertainty itself (VIX), where any broad
+   * risk event is relevant even without the ticker appearing in the story.
+   */
+  riskProxy: boolean;
   /** Phrases that tie a story to this symbol's theme. */
   themes: readonly string[];
   /** Catalysts that historically move this symbol. */
@@ -23,6 +28,16 @@ const MACRO_CORE: readonly CatalystType[] = [
   CatalystType.TREASURY_YIELDS,
 ];
 
+const BROAD_RISK: readonly CatalystType[] = [
+  CatalystType.GEOPOLITICAL,
+  CatalystType.MILITARY_CONFLICT,
+  CatalystType.OIL_SUPPLY_DISRUPTION,
+  CatalystType.BANKING_STRESS,
+  CatalystType.SYSTEMIC_RISK,
+  CatalystType.TARIFFS,
+  CatalystType.MARKET_MOVING,
+];
+
 /**
  * Per-symbol context. Any symbol without an entry still works through the
  * generic profile plus direct-mention relevance, so nothing is hardwired to
@@ -33,6 +48,7 @@ export const SYMBOL_CONTEXTS: Readonly<Record<string, SymbolContext>> = {
     symbol: 'SPY',
     label: 'S&P 500',
     broadMarket: true,
+    riskProxy: false,
     themes: [
       's&p 500',
       'sp 500',
@@ -45,17 +61,13 @@ export const SYMBOL_CONTEXTS: Readonly<Record<string, SymbolContext>> = {
       'mega-cap',
       'megacap',
     ],
-    catalysts: [
-      ...MACRO_CORE,
-      CatalystType.GEOPOLITICAL,
-      CatalystType.TARIFFS,
-      CatalystType.MARKET_MOVING,
-    ],
+    catalysts: [...MACRO_CORE, ...BROAD_RISK, CatalystType.ENERGY],
   },
   QQQ: {
     symbol: 'QQQ',
     label: 'Nasdaq 100',
     broadMarket: true,
+    riskProxy: false,
     themes: [
       'nasdaq',
       'technology stocks',
@@ -82,13 +94,15 @@ export const SYMBOL_CONTEXTS: Readonly<Record<string, SymbolContext>> = {
       CatalystType.SEMICONDUCTORS,
       CatalystType.AI,
       CatalystType.EARNINGS,
-      CatalystType.MARKET_MOVING,
+      CatalystType.REGULATORY,
+      ...BROAD_RISK,
     ],
   },
   IWM: {
     symbol: 'IWM',
     label: 'Russell 2000',
     broadMarket: true,
+    riskProxy: false,
     themes: [
       'russell 2000',
       'small cap',
@@ -99,7 +113,37 @@ export const SYMBOL_CONTEXTS: Readonly<Record<string, SymbolContext>> = {
       'credit conditions',
       'domestic economy',
     ],
-    catalysts: [...MACRO_CORE, CatalystType.CREDIT, CatalystType.MARKET_MOVING],
+    catalysts: [
+      ...MACRO_CORE,
+      CatalystType.CREDIT,
+      CatalystType.BANKING_STRESS,
+      ...BROAD_RISK,
+    ],
+  },
+  VIX: {
+    symbol: 'VIX',
+    label: 'implied equity volatility',
+    broadMarket: true,
+    riskProxy: true,
+    themes: [
+      'volatility',
+      'vix',
+      'fear gauge',
+      'risk appetite',
+      'flight to safety',
+      'safe haven',
+      'stock market',
+      'wall street',
+      'equities',
+      's&p 500',
+      'uncertainty',
+    ],
+    catalysts: [
+      ...MACRO_CORE,
+      ...BROAD_RISK,
+      CatalystType.CREDIT,
+      CatalystType.ENERGY,
+    ],
   },
 };
 
@@ -119,6 +163,7 @@ export const SYMBOL_ENTITY_ALIASES: Readonly<
   SPY: ['s&p 500', 'spdr s&p 500'],
   QQQ: ['nasdaq 100', 'nasdaq-100', 'invesco qqq'],
   IWM: ['russell 2000', 'ishares russell 2000'],
+  VIX: ['vix', 'volatility index', 'fear gauge'],
 };
 
 /** Mega-caps whose news carries index-level weight for QQQ and SPY. */
@@ -152,6 +197,7 @@ const GENERIC_CONTEXT: SymbolContext = {
   symbol: '',
   label: '',
   broadMarket: false,
+  riskProxy: false,
   themes: [],
   catalysts: [
     CatalystType.EARNINGS,

@@ -1,3 +1,7 @@
+import {
+  hasBroadRiskCatalyst,
+  maxCatalystSeverity,
+} from '../constants/catalyst-severity.js';
 import { RELEVANCE_WEIGHTS } from '../constants/news-intelligence-thresholds.js';
 import {
   INDEX_HEAVYWEIGHTS,
@@ -14,22 +18,6 @@ export interface RelevanceAssessment {
   mentionsSymbolDirectly: boolean;
   reasoning: string[];
 }
-
-const IMPORTANT_CATALYSTS: readonly CatalystType[] = [
-  CatalystType.FEDERAL_RESERVE,
-  CatalystType.CPI,
-  CatalystType.PPI,
-  CatalystType.INFLATION,
-  CatalystType.INTEREST_RATES,
-  CatalystType.JOBS,
-  CatalystType.GDP,
-  CatalystType.TREASURY_YIELDS,
-  CatalystType.EARNINGS,
-  CatalystType.GEOPOLITICAL,
-  CatalystType.TARIFFS,
-  CatalystType.CREDIT,
-  CatalystType.MARKET_MOVING,
-];
 
 /**
  * Blends direct mention, entity overlap, symbol theme, macro applicability,
@@ -52,13 +40,20 @@ export function scoreRelevance(
 
   const macroCatalyst = hasMacroCatalyst(catalysts);
   const marketWide = containsAnyPhrase(searchText, MARKET_WIDE_KEYWORDS);
+  const broadRisk = hasBroadRiskCatalyst(catalysts);
 
   let direct = 0;
   if (mentionsSymbolDirectly) {
     direct = 1;
     reasoning.push(`Article references ${context.symbol} directly`);
-  } else if (context.broadMarket && (macroCatalyst || marketWide)) {
-    direct = 0.8;
+  } else if (context.riskProxy && broadRisk) {
+    direct = 1;
+    reasoning.push(`Broad risk event is directly relevant to ${context.label}`);
+  } else if (
+    context.broadMarket &&
+    (macroCatalyst || marketWide || broadRisk)
+  ) {
+    direct = 0.85;
     reasoning.push(
       `Broad-market story applies to ${context.label || context.symbol}`,
     );
@@ -85,10 +80,15 @@ export function scoreRelevance(
   ) {
     theme = 1;
     reasoning.push(`Matches ${context.label || context.symbol} themes`);
+  } else if (context.riskProxy && broadRisk) {
+    theme = 0.5;
+    reasoning.push(
+      'Broad uncertainty feeds implied volatility even without an explicit market angle',
+    );
   }
 
   let macro = 0;
-  if (macroCatalyst) {
+  if (macroCatalyst || (context.riskProxy && broadRisk)) {
     macro = context.broadMarket ? 1 : 0.35;
     if (context.broadMarket) {
       reasoning.push('Macro catalyst applies to a broad-market instrument');
@@ -98,10 +98,8 @@ export function scoreRelevance(
   const contextCatalystHit = catalysts.some((catalyst) =>
     context.catalysts.includes(catalyst),
   );
-  const importantHit = catalysts.some((catalyst) =>
-    IMPORTANT_CATALYSTS.includes(catalyst),
-  );
-  const catalystImportance = contextCatalystHit ? 1 : importantHit ? 0.4 : 0;
+  const severity = maxCatalystSeverity(catalysts);
+  const catalystImportance = contextCatalystHit ? 1 : severity;
 
   const score = clamp01(
     direct * RELEVANCE_WEIGHTS.directSymbol +
@@ -114,6 +112,9 @@ export function scoreRelevance(
 
   if (reasoning.length === 0) {
     reasoning.push(`No clear connection to ${context.symbol} was found`);
+  }
+  if (theme === 0 && broadRisk && direct > 0) {
+    reasoning.push('Broad risk events widen uncertainty across the tape');
   }
 
   return { score: roundTo(score), mentionsSymbolDirectly, reasoning };

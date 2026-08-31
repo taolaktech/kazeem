@@ -55,7 +55,7 @@ describe('SeekingAlphaRssProvider', () => {
       }),
     );
 
-    const articles = await buildProvider().getRecentNews('SPY', {
+    const { articles, metrics } = await buildProvider().getRecentNews('SPY', {
       since: new Date(Date.now() - 3_600_000),
       limit: 10,
     });
@@ -65,9 +65,14 @@ describe('SeekingAlphaRssProvider', () => {
       'https://seekingalpha.test/api/sa/combined/SPY.xml',
     ]);
     expect(articles.map((article) => article.title)).toEqual([
-      'Market story',
       'Symbol story',
+      'Market story',
     ]);
+    expect(metrics).toEqual({
+      requestsMade: 2,
+      tickerSpecificCount: 1,
+      generalMarketCount: 1,
+    });
     expect(articles[0]).toMatchObject({
       provider: 'seeking-alpha',
       source: 'Seeking Alpha',
@@ -88,12 +93,14 @@ describe('SeekingAlphaRssProvider', () => {
           }),
     );
 
-    const articles = await buildProvider().getRecentNews('SPY', {
+    const { articles, metrics } = await buildProvider().getRecentNews('SPY', {
       since: new Date(Date.now() - 3_600_000),
       limit: 10,
     });
 
     expect(articles).toHaveLength(1);
+    expect(metrics.tickerSpecificCount).toBe(0);
+    expect(metrics.generalMarketCount).toBe(1);
   });
 
   it('fails when every feed is unavailable', async () => {
@@ -121,11 +128,11 @@ describe('SeekingAlphaRssProvider', () => {
       text: () => Promise.resolve(feed('Old story', new Date(0).toUTCString())),
     });
 
-    await expect(
-      buildProvider().getRecentNews('SPY', {
-        since: new Date(Date.now() - 3_600_000),
-        limit: 10,
-      }),
-    ).resolves.toEqual([]);
+    const { articles } = await buildProvider().getRecentNews('SPY', {
+      since: new Date(Date.now() - 3_600_000),
+      limit: 10,
+    });
+
+    expect(articles).toEqual([]);
   });
 });

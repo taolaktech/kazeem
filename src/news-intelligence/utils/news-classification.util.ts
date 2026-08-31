@@ -3,12 +3,17 @@ import {
   MARKET_WIDE_KEYWORDS,
   SENTIMENT_RULES,
 } from '../constants/news-keywords.js';
+import { maxCatalystSeverity } from '../constants/catalyst-severity.js';
 import {
-  HIGH_IMPACT_CATALYSTS,
-  HIGH_IMPACT_RELEVANCE_THRESHOLD,
-  MEDIUM_IMPACT_CATALYSTS,
-  MEDIUM_IMPACT_RELEVANCE_THRESHOLD,
+  HIGH_IMPACT_SCORE,
+  MEDIUM_IMPACT_SCORE,
+  SCOPE_BREADTH,
 } from '../constants/news-intelligence-thresholds.js';
+import {
+  RISK_BIAS_CONFLICT_SPREAD,
+  RISK_BIAS_RULES,
+} from '../constants/risk-bias-rules.js';
+import { MarketRiskBias } from '../enums/market-risk-bias.enum.js';
 import {
   CatalystType,
   MACRO_CATALYSTS,
@@ -117,25 +122,87 @@ export function classifySentiment(
   };
 }
 
-/** Potential market significance, not a prediction of movement. */
+export interface RiskBiasAssessment {
+  bias: MarketRiskBias;
+  confidence: number;
+  reasoning: string[];
+}
+
+/**
+ * Risk environment implied by the story, independent of direction. Escalation
+ * and de-escalation are matched separately, so "ceasefire reached" and
+ * "ceasefire collapses" cannot land on the same verdict, and a bare mention of
+ * a country or of the word "war" resolves nothing on its own.
+ */
+export function classifyRiskBias(searchText: string): RiskBiasAssessment {
+  const reasoning: string[] = [];
+  let riskOff = 0;
+  let riskOn = 0;
+  let dampened = false;
+
+  for (const rule of RISK_BIAS_RULES) {
+    if (!new RegExp(rule.pattern, 'i').test(searchText)) {
+      continue;
+    }
+    reasoning.push(rule.reason);
+    dampened = dampened || rule.dampensEscalation === true;
+    if (rule.bias === MarketRiskBias.RISK_OFF) {
+      riskOff = Math.max(riskOff, rule.confidence);
+    } else {
+      riskOn = Math.max(riskOn, rule.confidence);
+    }
+  }
+
+  if (dampened) {
+    riskOff *= 0.5;
+  }
+
+  if (riskOff === 0 && riskOn === 0) {
+    return { bias: MarketRiskBias.UNKNOWN, confidence: 0, reasoning: [] };
+  }
+
+  const spread = Math.abs(riskOff - riskOn);
+  if (riskOff > 0 && riskOn > 0 && spread < RISK_BIAS_CONFLICT_SPREAD) {
+    return {
+      bias: MarketRiskBias.NEUTRAL,
+      confidence: roundTo(spread),
+      reasoning: [...reasoning, 'Escalation and de-escalation cues offset'],
+    };
+  }
+
+  return {
+    bias: riskOff > riskOn ? MarketRiskBias.RISK_OFF : MarketRiskBias.RISK_ON,
+    confidence: roundTo(
+      clamp01(Math.max(riskOff, riskOn) - Math.min(riskOff, riskOn) * 0.5),
+    ),
+    reasoning,
+  };
+}
+
+/**
+ * Potential market significance, not a prediction of movement. The strongest
+ * catalyst's severity is scaled by how much of the market the story reaches
+ * and by how relevant and fresh it is, so a macro shock is not demoted just
+ * because its direction is unclear, and an unrelated small deal is not
+ * promoted just because it is recent.
+ */
 export function classifyImpact(
   catalysts: readonly CatalystType[],
   relevanceScore: number,
+  scope: NewsScope,
+  recency: number,
+  mentionsSymbolDirectly: boolean,
 ): NewsImpact {
-  const highCatalyst = catalysts.some((catalyst) =>
-    HIGH_IMPACT_CATALYSTS.includes(catalyst),
-  );
-  if (highCatalyst && relevanceScore >= HIGH_IMPACT_RELEVANCE_THRESHOLD) {
+  const severity = maxCatalystSeverity(catalysts);
+  const breadth = mentionsSymbolDirectly ? 1 : SCOPE_BREADTH[scope];
+  const score =
+    severity *
+    (0.4 + 0.6 * clamp01(relevanceScore)) *
+    (0.6 + 0.4 * clamp01(recency)) *
+    breadth;
+
+  if (score >= HIGH_IMPACT_SCORE) {
     return NewsImpact.HIGH;
   }
-  const mediumCatalyst = catalysts.some((catalyst) =>
-    MEDIUM_IMPACT_CATALYSTS.includes(catalyst),
-  );
-  if (
-    (highCatalyst || mediumCatalyst) &&
-    relevanceScore >= MEDIUM_IMPACT_RELEVANCE_THRESHOLD
-  ) {
-    return NewsImpact.MEDIUM;
-  }
-  return NewsImpact.LOW;
+  return score >= MEDIUM_IMPACT_SCORE ? NewsImpact.MEDIUM : NewsImpact.LOW;
 }
