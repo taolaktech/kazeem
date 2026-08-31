@@ -7,8 +7,6 @@ import { IndicatorService } from './indicators/indicator.service.js';
 import {
   MARKET_REGIMES,
   MarketRegime,
-  TREND_REGIMES,
-  VOLATILITY_REGIMES,
   type TrendDirection,
   type TrendStrength,
   type VolatilityLevel,
@@ -25,6 +23,8 @@ import {
   buildSignals,
   maxAttainableScore,
   scoreSignals,
+  selectPrimaryRegime,
+  type RegimeSelection,
   type RegimeSignals,
 } from './regime-scoring.js';
 import {
@@ -34,7 +34,6 @@ import {
 } from './session-evidence.js';
 import {
   ADX_RANGE_THRESHOLD,
-  ADX_TREND_THRESHOLD,
   CONFIDENCE_WEIGHTS,
   HIGH_VOLATILITY_RANK,
   LOW_VOLATILITY_RANK,
@@ -107,16 +106,16 @@ export class RegimeService implements RegimeClassifier {
     }
 
     const snapshot = this.indicatorService.computeSnapshot(validated.candles);
-    const warnings = [...validated.warnings, ...snapshot.warnings];
-    if (candleCount < MIN_RECOMMENDED_CANDLES) {
-      warnings.push(
-        `Only ${candleCount} candles provided; ${MIN_RECOMMENDED_CANDLES} are recommended for a stable classification.`,
-      );
-    }
+    const warnings = [
+      ...validated.warnings,
+      ...snapshot.warnings,
+      ...this.dataQualityWarnings(candleCount),
+    ];
 
     const signals = buildSignals(snapshot);
     const scores = scoreSignals(signals);
-    const primaryRegime = this.selectPrimaryRegime(scores, snapshot);
+    const selection = selectPrimaryRegime(scores, snapshot.features.adx);
+    const primaryRegime = selection.regime;
     const confidence = this.computeConfidence(
       primaryRegime,
       scores,
@@ -135,7 +134,7 @@ export class RegimeService implements RegimeClassifier {
         scores,
       ),
       features: snapshot.features,
-      reasoning: this.buildReasoning(primaryRegime, signals, scores),
+      reasoning: this.buildReasoning(primaryRegime, signals, scores, selection),
       dataQuality: {
         candleCount,
         sufficientData: candleCount >= MIN_RECOMMENDED_CANDLES,
@@ -166,7 +165,9 @@ export class RegimeService implements RegimeClassifier {
     const evidence = evaluateSessionEvidence(session);
     const signals = buildSignals(snapshot);
     const scores = applySessionEvidence(scoreSignals(signals), evidence);
-    const primaryRegime = this.selectPrimaryRegime(scores, snapshot);
+    const selection = selectPrimaryRegime(scores, snapshot.features.adx);
+    const primaryRegime = selection.regime;
+    const dataWarnings = this.dataQualityWarnings(candleCount);
     const confidence = this.computeConfidence(
       primaryRegime,
       scores,
@@ -187,16 +188,17 @@ export class RegimeService implements RegimeClassifier {
       ),
       features: snapshot.features,
       reasoning: [
-        ...this.buildReasoning(primaryRegime, signals, scores),
+        ...this.buildReasoning(primaryRegime, signals, scores, selection),
         ...evidence.reasoning,
       ],
       dataQuality: {
         candleCount,
-        sufficientData: session.context.tradeEvaluationAllowed,
+        sufficientData: candleCount >= MIN_RECOMMENDED_CANDLES,
         warnings: [
           ...session.warnings,
           ...validated.warnings,
           ...snapshot.warnings,
+          ...dataWarnings,
         ],
       },
       sessionContext: session.context,
@@ -209,53 +211,12 @@ export class RegimeService implements RegimeClassifier {
     };
   }
 
-  /**
-   * Highest score wins, with two guards: a trend regime needs directional
-   * strength (ADX) to be eligible at all, and a volatility regime never
-   * overrides a strongly supported trend — volatility then only shows up in
-   * the secondary characteristics.
-   */
-  private selectPrimaryRegime(
-    scores: Record<MarketRegime, number>,
-    snapshot: IndicatorSnapshot,
-  ): MarketRegime {
-    const adx = snapshot.features.adx ?? 0;
-    const trendEligible = adx >= ADX_RANGE_THRESHOLD;
-    const candidates = trendEligible
-      ? MARKET_REGIMES
-      : MARKET_REGIMES.filter((regime) => !TREND_REGIMES.includes(regime));
-
-    const leader = this.rankRegimes(scores, candidates)[0];
-    if (!VOLATILITY_REGIMES.includes(leader)) {
-      return leader;
-    }
-    const bestTrend = this.bestOf(scores, TREND_REGIMES);
-    return trendEligible &&
-      adx >= ADX_TREND_THRESHOLD &&
-      scores[bestTrend] >= TREND_PRIORITY_MIN_SCORE
-      ? bestTrend
-      : leader;
-  }
-
-  private rankRegimes(
-    scores: Record<MarketRegime, number>,
-    candidates: readonly MarketRegime[],
-  ): MarketRegime[] {
-    return [...candidates].sort((left, right) => {
-      const difference = scores[right] - scores[left];
-      return difference !== 0
-        ? difference
-        : MARKET_REGIMES.indexOf(left) - MARKET_REGIMES.indexOf(right);
-    });
-  }
-
-  private bestOf(
-    scores: Record<MarketRegime, number>,
-    candidates: readonly MarketRegime[],
-  ): MarketRegime {
-    return [...candidates].sort(
-      (left, right) => scores[right] - scores[left],
-    )[0];
+  private dataQualityWarnings(candleCount: number): string[] {
+    return candleCount >= MIN_RECOMMENDED_CANDLES
+      ? []
+      : [
+          `Only ${candleCount} completed candles are available; ${MIN_RECOMMENDED_CANDLES} are recommended for a stable classification.`,
+        ];
   }
 
   /**
@@ -350,6 +311,7 @@ export class RegimeService implements RegimeClassifier {
     primaryRegime: MarketRegime,
     signals: RegimeSignals,
     scores: Record<MarketRegime, number>,
+    selection?: RegimeSelection,
   ): string[] {
     const matched = signals[primaryRegime]
       .filter((candidate) => candidate.matched)
@@ -360,9 +322,18 @@ export class RegimeService implements RegimeClassifier {
       (regime) => regime !== primaryRegime && scores[regime] > 0,
     ).map((regime) => `${regime} also scored ${scores[regime]} points`);
 
+    const suppressed = selection?.suppressedTrend;
+    const suppression =
+      suppressed === undefined
+        ? []
+        : [
+            `${suppressed.regime} scored ${suppressed.score} points but ADX ${Math.round(suppressed.adx * 100) / 100} is below ${ADX_RANGE_THRESHOLD}, so trend regimes are not eligible.`,
+          ];
+
     return [
       `Primary regime ${primaryRegime} scored ${scores[primaryRegime]} points.`,
       ...matched,
+      ...suppression,
       ...conflicting,
     ];
   }

@@ -17,9 +17,14 @@ export const VOLATILITY_HISTORY_WINDOW = 60;
 /** Window used to detect Bollinger band expansion / contraction. */
 export const BOLLINGER_EXPANSION_WINDOW = 5;
 
-/** Data quality limits. */
+/**
+ * Data quality limits. The recommended count matches the working-set cap
+ * (`MARKET_MAX_INDICATOR_CANDLES`, default 80) so a full working set is never
+ * reported as insufficient: it comfortably covers EMA50, ADX14, RSI14, ATR14
+ * and Bollinger20.
+ */
 export const MIN_REQUIRED_CANDLES = 60;
-export const MIN_RECOMMENDED_CANDLES = 100;
+export const MIN_RECOMMENDED_CANDLES = 80;
 
 /** Signal thresholds. */
 export const ADX_TREND_THRESHOLD = 25;

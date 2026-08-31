@@ -88,7 +88,17 @@ export function partitionSessionCandles(
       ? today
       : (latestDate([...regularByDate.keys()]) ?? today);
 
-  const currentSessionCandles = regularByDate.get(sessionDate) ?? [];
+  // The full day is kept only as preserved context (opening range, session
+  // open); every analytic runs on the capped working set below.
+  const sessionCandles = regularByDate.get(sessionDate) ?? [];
+  const currentSessionCandles = sessionCandles.slice(-maxIndicatorCandles);
+  const truncatedSessionCandles =
+    sessionCandles.length - currentSessionCandles.length;
+  if (truncatedSessionCandles > 0) {
+    warnings.push(
+      `${truncatedSessionCandles} earlier current-session candle(s) fall outside the ${maxIndicatorCandles}-candle working set.`,
+    );
+  }
   const premarketCandles = premarketByDate.get(sessionDate) ?? [];
 
   const previousDates = [...regularByDate.keys()]
@@ -122,10 +132,11 @@ export function partitionSessionCandles(
   const currentSessionFeatures = buildCurrentSessionFeatures(
     currentSessionCandles,
     premarket,
+    sessionCandles[0]?.open ?? null,
   );
   const openingRangeMinutes =
     options.openingRangeMinutes ?? openingSettlementMinutes;
-  const openingRange = buildOpeningRangeContext(currentSessionCandles, {
+  const openingRange = buildOpeningRangeContext(sessionCandles, {
     now,
     sessionDate,
     timeframeMinutes,
@@ -136,12 +147,12 @@ export function partitionSessionCandles(
   const marketSession = resolveMarketSession(now, openingSettlementMinutes);
   const sessionMaturity = resolveSessionMaturity(
     marketSession,
-    currentSessionCandles.length,
+    sessionCandles.length,
   );
   const tradeEvaluationAllowed =
     marketSession === MarketSession.REGULAR &&
     sessionDate === today &&
-    currentSessionCandles.length >= MATURITY_THRESHOLDS.early;
+    sessionCandles.length >= MATURITY_THRESHOLDS.early;
 
   if (marketSession === MarketSession.OPENING_SETTLEMENT) {
     warnings.push(
