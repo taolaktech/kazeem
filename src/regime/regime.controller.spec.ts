@@ -1,5 +1,4 @@
 import { Test, type TestingModule } from '@nestjs/testing';
-import { MarketDataService } from '../market-data/market-data.service.js';
 import { MarketRegime } from './enums/market-regime.enum.js';
 import { RegimeController } from './regime.controller.js';
 import { RegimeService } from './regime.service.js';
@@ -11,19 +10,15 @@ import { NotFoundException } from '@nestjs/common';
 describe('RegimeController', () => {
   let controller: RegimeController;
   const classify = vi.fn();
-  const getRecentMinuteCandles = vi.fn();
+  const classifySymbol = vi.fn();
 
   beforeEach(async () => {
     classify.mockReset();
-    getRecentMinuteCandles.mockReset();
+    classifySymbol.mockReset();
     const moduleRef: TestingModule = await Test.createTestingModule({
       controllers: [RegimeController],
       providers: [
-        { provide: RegimeService, useValue: { classify } },
-        {
-          provide: MarketDataService,
-          useValue: { getRecentMinuteCandles },
-        },
+        { provide: RegimeService, useValue: { classify, classifySymbol } },
       ],
     }).compile();
 
@@ -49,30 +44,26 @@ describe('RegimeController', () => {
     expect(classify).toHaveBeenCalledWith('SPY', dto.candles);
   });
 
-  it('fetches market data then classifies the requested symbol', async () => {
-    const candles = buildCandles(120, { close: (index) => 100 + index });
+  it('normalizes the symbol before classifying it from market data', async () => {
     const expected = {
       primaryRegime: MarketRegime.TRENDING_BULLISH,
     } as RegimeClassificationResult;
-    getRecentMinuteCandles.mockResolvedValue(candles);
-    classify.mockResolvedValue(expected);
+    classifySymbol.mockResolvedValue(expected);
 
     await expect(
       controller.classifySymbol({ symbol: ' spy ' }, { count: 500 }),
     ).resolves.toBe(expected);
 
-    expect(getRecentMinuteCandles).toHaveBeenCalledWith('SPY', 500);
-    expect(classify).toHaveBeenCalledWith('SPY', candles);
+    expect(classifySymbol).toHaveBeenCalledWith('SPY', 500);
   });
 
-  it('propagates market data failures without classifying', async () => {
-    getRecentMinuteCandles.mockRejectedValue(
+  it('propagates market data failures', async () => {
+    classifySymbol.mockRejectedValue(
       new NotFoundException('No market data found for symbol INVALID'),
     );
 
     await expect(
       controller.classifySymbol({ symbol: 'INVALID' }, { count: 500 }),
     ).rejects.toThrow(NotFoundException);
-    expect(classify).not.toHaveBeenCalled();
   });
 });
