@@ -1,4 +1,5 @@
 import { Injectable } from '@nestjs/common';
+import { MarketDataService } from '../market-data/market-data.service.js';
 import { validateCandles } from './candle-validator.js';
 import { IndicatorService } from './indicators/indicator.service.js';
 import {
@@ -40,7 +41,22 @@ import {
 /** Deterministic, rule-based market regime classifier (version 1, no ML). */
 @Injectable()
 export class RegimeService implements RegimeClassifier {
-  constructor(private readonly indicatorService: IndicatorService) {}
+  constructor(
+    private readonly indicatorService: IndicatorService,
+    private readonly marketDataService: MarketDataService,
+  ) {}
+
+  /** Classifies `symbol` from market data fetched on demand. */
+  async classifySymbol(
+    symbol: string,
+    count?: number,
+  ): Promise<RegimeClassificationResult> {
+    const candles = await this.marketDataService.getRecentMinuteCandles(
+      symbol,
+      count,
+    );
+    return this.classify(symbol, candles);
+  }
 
   async classify(
     symbol: string,

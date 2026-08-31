@@ -2,6 +2,7 @@ import { BadRequestException } from '@nestjs/common';
 import { Test, type TestingModule } from '@nestjs/testing';
 import { MarketRegime } from './enums/market-regime.enum.js';
 import { InsufficientMarketDataException } from './errors/insufficient-market-data.exception.js';
+import { MarketDataService } from '../market-data/market-data.service.js';
 import { IndicatorService } from './indicators/indicator.service.js';
 import { RegimeService } from './regime.service.js';
 import { buildCandles } from './testing/candle-factory.js';
@@ -63,10 +64,19 @@ function conflictingCandles(): MarketCandle[] {
 
 describe('RegimeService', () => {
   let service: RegimeService;
+  const getRecentMinuteCandles = vi.fn();
 
   beforeEach(async () => {
+    getRecentMinuteCandles.mockReset();
     const moduleRef: TestingModule = await Test.createTestingModule({
-      providers: [IndicatorService, RegimeService],
+      providers: [
+        IndicatorService,
+        RegimeService,
+        {
+          provide: MarketDataService,
+          useValue: { getRecentMinuteCandles },
+        },
+      ],
     }).compile();
 
     service = moduleRef.get(RegimeService);
@@ -197,5 +207,14 @@ describe('RegimeService', () => {
 
     expect(result.features.relativeVolume).toBeUndefined();
     expect(result.dataQuality.warnings.length).toBeGreaterThan(0);
+  });
+
+  it('classifies a symbol from on-demand market data', async () => {
+    getRecentMinuteCandles.mockResolvedValue(bullishCandles());
+
+    const result = await service.classifySymbol('SPY', 300);
+
+    expect(getRecentMinuteCandles).toHaveBeenCalledWith('SPY', 300);
+    expect(result.primaryRegime).toBe(MarketRegime.TRENDING_BULLISH);
   });
 });
