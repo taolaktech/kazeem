@@ -82,6 +82,20 @@ export class VolatilityIntelligenceService {
       normalizedSymbol,
       underlyingSnapshot,
     );
+
+    return this.analyzeForSession(underlyingSnapshot, signal, now);
+  }
+
+  /**
+   * Same analysis from an already-computed underlying snapshot and signal, so
+   * downstream layers do not refetch the underlying they already hold. Only
+   * the volatility index is requested here.
+   */
+  async analyzeForSession(
+    underlyingSnapshot: MarketSessionSnapshot,
+    signal: SignalResult,
+    now: Date = new Date(),
+  ): Promise<VolatilityIntelligenceResult> {
     const vixSnapshot = await this.loadVixSnapshot(now);
 
     return this.build(underlyingSnapshot, vixSnapshot, signal, now);
