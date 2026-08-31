@@ -7,6 +7,7 @@ import { OptionSelectionModule } from './option-selection/option-selection.modul
 import { OptionsDataModule } from './options-data/options-data.module.js';
 import { RegimeModule } from './regime/regime.module.js';
 import { SignalModule } from './signal/signal.module.js';
+import { TradeDecisionModule } from './trade-decision/trade-decision.module.js';
 import { VolatilityIntelligenceModule } from './volatility-intelligence/volatility-intelligence.module.js';
 
 @Module({
@@ -18,6 +19,7 @@ import { VolatilityIntelligenceModule } from './volatility-intelligence/volatili
     OptionSelectionModule,
     NewsIntelligenceModule,
     VolatilityIntelligenceModule,
+    TradeDecisionModule,
   ],
   controllers: [AppController],
   providers: [AppService],
