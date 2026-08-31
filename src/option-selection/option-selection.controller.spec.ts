@@ -26,8 +26,14 @@ describe('OptionSelectionController', () => {
     selectForSymbol.mockResolvedValue(expected);
 
     await expect(
-      controller.selectContract({ symbol: ' spy ' }, { maxAlternatives: 3 }),
+      controller.selectContract(
+        { symbol: ' spy ' },
+        { maxBudget: 500, maxAlternatives: 3 },
+      ),
     ).resolves.toBe(expected);
-    expect(selectForSymbol).toHaveBeenCalledWith('SPY', { maxAlternatives: 3 });
+    expect(selectForSymbol).toHaveBeenCalledWith('SPY', {
+      maxBudget: 500,
+      maxAlternatives: 3,
+    });
   });
 });

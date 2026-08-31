@@ -18,7 +18,10 @@ export class OptionSelectionController {
   ): Promise<OptionSelectionResult> {
     return this.optionSelectionService.selectForSymbol(
       params.symbol.trim().toUpperCase(),
-      { maxAlternatives: query.maxAlternatives },
+      {
+        maxBudget: query.maxBudget,
+        maxAlternatives: query.maxAlternatives,
+      },
     );
   }
 }

@@ -10,7 +10,11 @@ import type { SignalResult } from '../signal/interfaces/signal-result.interface.
 import { SignalService } from '../signal/signal.service.js';
 import { OptionSelectionStatus } from './enums/option-selection-status.enum.js';
 import type { OptionCandidate } from './interfaces/option-candidate-score.interface.js';
-import { OptionSelectionService } from './option-selection.service.js';
+import type { OptionSelectionResult } from './interfaces/option-selection-result.interface.js';
+import {
+  OptionSelectionService,
+  type OptionSelectionOptions,
+} from './option-selection.service.js';
 import {
   UNDERLYING_PRICE,
   buildContract,
@@ -77,6 +81,18 @@ describe('OptionSelectionService', () => {
     service = moduleRef.get(OptionSelectionService);
   });
 
+  /** Budget high enough that it never filters the default fixtures. */
+  const DEFAULT_BUDGET = 100_000;
+
+  function select(
+    options: Partial<OptionSelectionOptions> = {},
+  ): Promise<OptionSelectionResult> {
+    return service.selectForSymbol('TEST', {
+      maxBudget: DEFAULT_BUDGET,
+      ...options,
+    });
+  }
+
   function mock(signal: MarketSignal, contracts: OptionContract[]): void {
     getSignalForSymbol.mockResolvedValue(buildSignal(signal));
     getOptionChain.mockResolvedValue(buildChain(contracts));
@@ -90,7 +106,7 @@ describe('OptionSelectionService', () => {
         : MarketSignal.BEARISH,
       [contract],
     );
-    const result = await service.selectForSymbol('TEST');
+    const result = await select();
     if (result.selectedContract === null) {
       throw new Error('expected a selected contract');
     }
@@ -103,7 +119,7 @@ describe('OptionSelectionService', () => {
       buildContract({ symbol: 'PUT_1', contractType: 'PUT' }),
     ]);
 
-    const result = await service.selectForSymbol('TEST');
+    const result = await select();
 
     expect(result.status).toBe(OptionSelectionStatus.SELECTED);
     expect(result.optionType).toBe('CALL');
@@ -120,7 +136,7 @@ describe('OptionSelectionService', () => {
       buildContract({ symbol: 'CALL_1' }),
     ]);
 
-    const result = await service.selectForSymbol('TEST');
+    const result = await select();
 
     expect(result.optionType).toBe('PUT');
     expect(result.selectedContract?.symbol).toBe('PUT_1');
@@ -133,7 +149,7 @@ describe('OptionSelectionService', () => {
   it('returns NO_SELECTION without touching the chain on NEUTRAL', async () => {
     getSignalForSymbol.mockResolvedValue(buildSignal(MarketSignal.NEUTRAL));
 
-    const result = await service.selectForSymbol('TEST');
+    const result = await select();
 
     expect(result.status).toBe(OptionSelectionStatus.NO_SELECTION);
     expect(result.signal).toBe(MarketSignal.NEUTRAL);
@@ -146,7 +162,7 @@ describe('OptionSelectionService', () => {
   it('returns NO_SELECTION without touching the chain on NO_TRADE', async () => {
     getSignalForSymbol.mockResolvedValue(buildSignal(MarketSignal.NO_TRADE));
 
-    const result = await service.selectForSymbol('TEST');
+    const result = await select();
 
     expect(result.status).toBe(OptionSelectionStatus.NO_SELECTION);
     expect(result.signal).toBe(MarketSignal.NO_TRADE);
@@ -160,7 +176,7 @@ describe('OptionSelectionService', () => {
       buildContract({ symbol: 'ATM' }),
     ]);
 
-    const result = await service.selectForSymbol('TEST');
+    const result = await select();
 
     expect(result.selectedContract?.symbol).toBe('ATM');
     expect(result.selectedContract?.moneyness).toBe('ATM');
@@ -222,7 +238,7 @@ describe('OptionSelectionService', () => {
   it('still selects a contract when bid/ask are missing', async () => {
     mock(MarketSignal.BULLISH, [withQuote(null, null)]);
 
-    const result = await service.selectForSymbol('TEST');
+    const result = await select();
 
     expect(result.status).toBe(OptionSelectionStatus.SELECTED);
     expect(result.selectedContract?.quoteAvailable).toBe(false);
@@ -235,7 +251,7 @@ describe('OptionSelectionService', () => {
   it('is not execution ready when bid/ask are missing', async () => {
     mock(MarketSignal.BULLISH, [withQuote(null, null, { lastPrice: 1.42 })]);
 
-    const result = await service.selectForSymbol('TEST');
+    const result = await select();
 
     expect(result.executionReady).toBe(false);
     expect(result.selectedContract?.lastPrice).toBe(1.42);
@@ -247,7 +263,7 @@ describe('OptionSelectionService', () => {
   it('is execution ready on a complete, tightly quoted contract', async () => {
     mock(MarketSignal.BULLISH, [withQuote(1.0, 1.02)]);
 
-    const result = await service.selectForSymbol('TEST');
+    const result = await select();
 
     expect(result.executionReady).toBe(true);
     expect(result.selectedContract?.quoteAvailable).toBe(true);
@@ -290,7 +306,7 @@ describe('OptionSelectionService', () => {
       buildContract({ symbol: 'MILES_AWAY', strikePrice: 180 }),
     ]);
 
-    const result = await service.selectForSymbol('TEST');
+    const result = await select();
 
     expect(result.status).toBe(OptionSelectionStatus.NO_SELECTION);
     expect(result.selectedContract).toBeNull();
@@ -302,7 +318,7 @@ describe('OptionSelectionService', () => {
     getSignalForSymbol.mockResolvedValue(buildSignal(MarketSignal.BULLISH));
     getOptionChain.mockRejectedValue(new NotFoundException('no contracts'));
 
-    const result = await service.selectForSymbol('TEST');
+    const result = await select();
 
     expect(result.status).toBe(OptionSelectionStatus.NO_SELECTION);
   });
@@ -315,9 +331,7 @@ describe('OptionSelectionService', () => {
       ),
     );
 
-    const result = await service.selectForSymbol('TEST', {
-      maxAlternatives: 3,
-    });
+    const result = await select({ maxAlternatives: 3 });
 
     expect(result.alternatives).toHaveLength(3);
     const scores = [
@@ -333,12 +347,12 @@ describe('OptionSelectionService', () => {
     getSignalForSymbol.mockResolvedValue(
       buildSignal(MarketSignal.BULLISH, 0.95),
     );
-    const strong = await service.selectForSymbol('TEST');
+    const strong = await select();
 
     getSignalForSymbol.mockResolvedValue(
       buildSignal(MarketSignal.BULLISH, 0.3),
     );
-    const weak = await service.selectForSymbol('TEST');
+    const weak = await select();
 
     expect(strong.confidence).toBeGreaterThan(weak.confidence);
     expect(strong.confidence).toBeLessThanOrEqual(1);
@@ -347,12 +361,92 @@ describe('OptionSelectionService', () => {
 
   it('lowers confidence when the selection has no quote', async () => {
     mock(MarketSignal.BULLISH, [withQuote(1.0, 1.02)]);
-    const quoted = await service.selectForSymbol('TEST');
+    const quoted = await select();
 
     mock(MarketSignal.BULLISH, [withQuote(null, null)]);
-    const unquoted = await service.selectForSymbol('TEST');
+    const unquoted = await select();
 
     expect(unquoted.confidence).toBeLessThan(quoted.confidence);
+  });
+
+  it('rejects contracts whose estimated cost exceeds the max budget', async () => {
+    mock(MarketSignal.BULLISH, [
+      withQuote(6.0, 6.1, { symbol: 'EXPENSIVE' }),
+      withQuote(3.1, 3.2, { symbol: 'AFFORDABLE', delta: 0.5 }),
+    ]);
+
+    const result = await select({ maxBudget: 500 });
+
+    expect(result.selectedContract?.symbol).toBe('AFFORDABLE');
+    expect(result.selectedContract?.estimatedContractCost).toBe(320);
+    expect(result.selectedContract?.withinBudget).toBe(true);
+    expect(result.maxBudget).toBe(500);
+    expect(
+      result.alternatives.map((candidate) => candidate.symbol),
+    ).not.toContain('EXPENSIVE');
+  });
+
+  it('never ranks an over-budget contract even when it scores highest', async () => {
+    mock(MarketSignal.BULLISH, [
+      withQuote(6.0, 6.1, { symbol: 'BEST_BUT_PRICEY', delta: 0.55 }),
+    ]);
+
+    const result = await select({ maxBudget: 500 });
+
+    expect(result.status).toBe(OptionSelectionStatus.NO_SELECTION);
+    expect(result.selectedContract).toBeNull();
+    expect(result.reasoning).toContain(
+      'No qualifying CALL contract was available within the $500 maximum trade budget',
+    );
+  });
+
+  it('prices the budget check from the ask, then midpoint, then last price', async () => {
+    const quoted = await scoreOne(withQuote(3.0, 3.2));
+    expect(quoted.premiumPriceSource).toBe('ASK');
+    expect(quoted.estimatedContractCost).toBe(320);
+
+    const midOnly = await scoreOne(
+      buildContract({ bid: null, ask: null, midpoint: 2.5 }),
+    );
+    expect(midOnly.premiumPriceSource).toBe('MIDPOINT');
+    expect(midOnly.estimatedContractCost).toBe(250);
+
+    const lastOnly = await scoreOne(withQuote(null, null, { lastPrice: 1.4 }));
+    expect(lastOnly.premiumPriceSource).toBe('LAST_PRICE');
+    expect(lastOnly.estimatedContractCost).toBe(140);
+    expect(lastOnly.riskFlags).toContain(
+      'Budget eligibility estimated from last trade price; current ask unavailable.',
+    );
+  });
+
+  it('rejects a contract with no usable premium price', async () => {
+    mock(MarketSignal.BULLISH, [
+      withQuote(null, null, { symbol: 'NO_PRICE', lastPrice: null }),
+    ]);
+
+    const result = await select({ maxBudget: 500 });
+
+    expect(result.status).toBe(OptionSelectionStatus.NO_SELECTION);
+    expect(result.reasoning).toContain(
+      'Unable to verify contract cost against max budget for 1 contract(s).',
+    );
+  });
+
+  it('is not execution ready when budget eligibility came from the last price', async () => {
+    mock(MarketSignal.BULLISH, [withQuote(null, null, { lastPrice: 1.4 })]);
+
+    const result = await select({ maxBudget: 500 });
+
+    expect(result.status).toBe(OptionSelectionStatus.SELECTED);
+    expect(result.executionReady).toBe(false);
+  });
+
+  it('reports the max budget on a non-directional signal', async () => {
+    getSignalForSymbol.mockResolvedValue(buildSignal(MarketSignal.NEUTRAL));
+
+    const result = await select({ maxBudget: 250 });
+
+    expect(result.maxBudget).toBe(250);
   });
 
   it('classifies moneyness relative to the live underlying price', async () => {
@@ -361,7 +455,7 @@ describe('OptionSelectionService', () => {
       buildContract({ contractType: 'PUT', strikePrice: 102, delta: -0.6 }),
     ]);
 
-    const result = await service.selectForSymbol('TEST');
+    const result = await select();
 
     expect(result.selectedContract?.moneyness).toBe('ITM');
     expect(result.selectedContract?.strikeDistancePercent).toBeCloseTo(0.02, 4);

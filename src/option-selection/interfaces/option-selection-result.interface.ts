@@ -12,6 +12,8 @@ export interface OptionSelectionResult {
   optionType: OptionType | null;
   status: OptionSelectionStatus;
   confidence: number;
+  /** Maximum total premium, in dollars, allowed for one contract position. */
+  maxBudget: number;
   /** Latest underlying price from market data, not from the options payload. */
   underlyingPrice: number | null;
   selectedContract: OptionCandidate | null;
