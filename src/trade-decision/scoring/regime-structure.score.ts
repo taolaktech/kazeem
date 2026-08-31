@@ -156,14 +156,15 @@ function scoreSessionStructure(
   confirmations: string[],
 ): number {
   const bullish = direction === TradeDirection.CALL;
+  const sessionPosition = currentSession.sessionPositionInRange;
   const checks: { supportive: boolean; label: string }[] = [
     {
       supportive: bullish
         ? currentSession.higherHighs
         : currentSession.lowerLows,
       label: bullish
-        ? 'Session is printing higher highs'
-        : 'Session is printing lower lows',
+        ? 'Analytical window is printing higher highs'
+        : 'Analytical window is printing lower lows',
     },
     {
       supportive: currentSession.aboveSessionOpen === (bullish ? true : false),
@@ -173,10 +174,8 @@ function scoreSessionStructure(
     },
     {
       supportive:
-        currentSession.positionInRange !== null &&
-        (bullish
-          ? currentSession.positionInRange >= 0.6
-          : currentSession.positionInRange <= 0.4),
+        sessionPosition !== null &&
+        (bullish ? sessionPosition >= 0.6 : sessionPosition <= 0.4),
       label: bullish
         ? 'Price sits in the upper part of the session range'
         : 'Price sits in the lower part of the session range',
@@ -187,7 +186,7 @@ function scoreSessionStructure(
         (bullish
           ? currentSession.slopePercent > 0
           : currentSession.slopePercent < 0),
-      label: `Session drift is ${bullish ? 'positive' : 'negative'}`,
+      label: `Analytical-window drift is ${bullish ? 'positive' : 'negative'}`,
     },
   ];
 
@@ -200,8 +199,8 @@ function scoreSessionStructure(
         CATEGORY,
         'STRUCTURE_UNSUPPORTIVE',
         ConflictSeverity.MODERATE,
-        `Current-session structure does not support the ${direction} thesis`,
-        true,
+        `Session structure does not support the ${direction} thesis`,
+        false,
       ),
     );
   }
@@ -295,14 +294,13 @@ function scoreOpeningRange(
   }
 
   // Inside the range: reward the location and structure, not the breakout.
+  const sessionPosition = currentSession.sessionPositionInRange;
   const supportive =
     (bullish
       ? openingRange.failedBreakdownBelow
       : openingRange.failedBreakoutAbove) ||
-    (currentSession.positionInRange !== null &&
-      (bullish
-        ? currentSession.positionInRange >= 0.6
-        : currentSession.positionInRange <= 0.4)) ||
+    (sessionPosition !== null &&
+      (bullish ? sessionPosition >= 0.6 : sessionPosition <= 0.4)) ||
     (bullish ? currentSession.higherHighs : currentSession.lowerLows);
 
   if (supportive) {

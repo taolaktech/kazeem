@@ -33,6 +33,20 @@ import type {
   DecisionConflict,
 } from './component-score.interface.js';
 
+/**
+ * The rolling analytical working set: at most `MARKET_MAX_INDICATOR_CANDLES`
+ * completed candles. These are never the day's true reference levels.
+ */
+export interface DecisionAnalysisWindow {
+  timeframeMinutes: number;
+  candleCount: number;
+  open: number | null;
+  high: number | null;
+  low: number | null;
+  close: number | null;
+  positionInRange: number | null;
+}
+
 export interface DecisionMarketContext {
   regime: MarketRegime;
   regimeConfidence: number;
@@ -44,11 +58,17 @@ export interface DecisionMarketContext {
   marketSession: MarketSession;
   sessionMaturity: SessionMaturity;
   timeframeMinutes: number;
+  /** Analytical candle count; capped, so never the day's candle count. */
   currentSessionCandleCount: number;
+  /** Informational count of every completed candle in the session. */
+  totalSessionCandleCount: number;
   currentPrice: number;
+  /** True 09:30 ET session levels, independent of the analytical window. */
   sessionOpen: number | null;
   sessionHigh: number | null;
   sessionLow: number | null;
+  sessionPositionInRange: number | null;
+  analysisWindow: DecisionAnalysisWindow;
   /** Premarket levels stay separate from the opening range on purpose. */
   premarketHigh: number | null;
   premarketLow: number | null;

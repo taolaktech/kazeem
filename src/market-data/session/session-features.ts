@@ -68,6 +68,7 @@ export const EMPTY_CURRENT_SESSION_FEATURES: CurrentSessionFeatures = {
   sessionOpen: null,
   sessionHigh: null,
   sessionLow: null,
+  sessionPositionInRange: null,
   totalSessionCandleCount: 0,
   aboveSessionOpen: null,
   abovePremarketHigh: null,
@@ -220,6 +221,8 @@ export function buildCurrentSessionFeatures(
   const low = Math.min(...candles.map((candle) => candle.low));
   const range = high - low;
   const sessionOpen = sessionCandles[0]?.open ?? open;
+  const sessionHigh = Math.max(...sessionCandles.map((candle) => candle.high));
+  const sessionLow = Math.min(...sessionCandles.map((candle) => candle.low));
 
   return {
     candleCount: candles.length,
@@ -240,8 +243,9 @@ export function buildCurrentSessionFeatures(
     higherHighs: hasHigherHighs(candles),
     lowerLows: hasLowerLows(candles),
     sessionOpen,
-    sessionHigh: Math.max(...sessionCandles.map((candle) => candle.high)),
-    sessionLow: Math.min(...sessionCandles.map((candle) => candle.low)),
+    sessionHigh,
+    sessionLow,
+    sessionPositionInRange: positionInRange(close, sessionHigh, sessionLow),
     totalSessionCandleCount: sessionCandles.length,
     aboveSessionOpen: close > sessionOpen,
     abovePremarketHigh: premarket.high === null ? null : close > premarket.high,

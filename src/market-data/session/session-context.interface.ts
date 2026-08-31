@@ -74,6 +74,8 @@ export interface CurrentSessionFeatures {
   sessionOpen: number | null;
   sessionHigh: number | null;
   sessionLow: number | null;
+  /** Last close inside the true full-session range, in [0, 1]. */
+  sessionPositionInRange: number | null;
   /** Informational full-session count; never an analytical working set. */
   totalSessionCandleCount: number;
   /** Last close against the full-session open, not the window open. */

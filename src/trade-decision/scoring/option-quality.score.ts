@@ -169,7 +169,7 @@ function scoreLiquidity(
         'THIN_LIQUIDITY',
         ConflictSeverity.MODERATE,
         `Contract liquidity is thin (${contract.volume} volume, ${contract.openInterest} open interest)`,
-        true,
+        false,
       ),
     );
   }
@@ -206,7 +206,7 @@ function scoreSpread(
         'WIDE_SPREAD',
         ConflictSeverity.MODERATE,
         `Bid/ask spread of ${spreadPercent.toFixed(1)}% is wide for an intraday long`,
-        true,
+        false,
       ),
     );
     return 0;
@@ -238,7 +238,7 @@ function scoreDte(
         'ZERO_DTE',
         ConflictSeverity.MODERATE,
         '0DTE contract carries extreme theta and gamma risk',
-        true,
+        false,
       ),
     );
     return points * 0.4;

@@ -91,7 +91,7 @@ export function scoreDirectionalSignal(
             'SIGNAL_CONTESTED',
             ConflictSeverity.MODERATE,
             `Signal carries ${signal.conflicts.length} conflicting indicators`,
-            true,
+            false,
           ),
         ]
       : [];
