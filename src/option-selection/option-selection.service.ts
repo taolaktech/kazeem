@@ -7,6 +7,7 @@ import { MarketSignal } from '../signal/enums/market-signal.enum.js';
 import type { SignalResult } from '../signal/interfaces/signal-result.interface.js';
 import { SignalService } from '../signal/signal.service.js';
 import { scoreCandidate } from './candidate-scoring.js';
+import { isWithinBudget, resolvePremium } from './premium-pricing.js';
 import {
   CANDIDATE_POOL_SATURATION,
   CONFIDENCE_WEIGHTS,
@@ -22,6 +23,8 @@ import type { OptionCandidate } from './interfaces/option-candidate-score.interf
 import type { OptionSelectionResult } from './interfaces/option-selection-result.interface.js';
 
 export interface OptionSelectionOptions {
+  /** Hard cap, in dollars, on the total premium of one contract position. */
+  maxBudget: number;
   maxAlternatives?: number;
 }
 
@@ -42,7 +45,7 @@ export class OptionSelectionService {
 
   async selectForSymbol(
     symbol: string,
-    options: OptionSelectionOptions = {},
+    options: OptionSelectionOptions,
   ): Promise<OptionSelectionResult> {
     const signal = await this.signalService.getSignalForSymbol(symbol);
     return this.selectForSignal(symbol, signal, options);
@@ -51,26 +54,58 @@ export class OptionSelectionService {
   async selectForSignal(
     symbol: string,
     signal: SignalResult,
-    options: OptionSelectionOptions = {},
+    options: OptionSelectionOptions,
   ): Promise<OptionSelectionResult> {
+    const { maxBudget } = options;
     const optionType = optionTypeFor(signal.signal);
     if (optionType === null) {
-      return noSelection(symbol, signal, null, null, [
+      return noSelection(symbol, signal, null, null, maxBudget, [
         `Signal engine returned ${signal.signal}; option contract selection was skipped.`,
       ]);
     }
 
     const underlyingPrice = await this.marketDataService.getLatestPrice(symbol);
     const contracts = await this.fetchContracts(symbol, optionType);
-    const candidates = contracts
-      .map((contract) => scoreCandidate(contract, underlyingPrice))
+
+    // Budget is a hard filter, applied before ranking so an unaffordable
+    // contract can never surface as the recommendation.
+    const priced = contracts.map((contract) => ({
+      contract,
+      pricing: resolvePremium(contract),
+    }));
+    const affordable = priced.filter(({ pricing }) =>
+      isWithinBudget(pricing, maxBudget),
+    );
+    const unpriced = priced.filter(
+      ({ pricing }) => pricing.premiumPriceSource === 'UNAVAILABLE',
+    ).length;
+
+    const candidates = affordable
+      .map(({ contract }) =>
+        scoreCandidate(contract, underlyingPrice, maxBudget),
+      )
       .sort((left, right) => right.score - left.score);
 
     if (candidates.length === 0) {
-      return noSelection(symbol, signal, optionType, underlyingPrice, [
-        `Signal engine returned ${signal.signal}`,
-        `No ${optionType} contracts met the minimum selection criteria.`,
-      ]);
+      return noSelection(
+        symbol,
+        signal,
+        optionType,
+        underlyingPrice,
+        maxBudget,
+        [
+          `Signal engine returned ${signal.signal}`,
+          `${optionType} contracts were evaluated`,
+          ...(unpriced > 0
+            ? [
+                `Unable to verify contract cost against max budget for ${unpriced} contract(s).`,
+              ]
+            : []),
+          contracts.length === 0
+            ? `No ${optionType} contracts met the minimum selection criteria.`
+            : `No qualifying ${optionType} contract was available within the $${maxBudget} maximum trade budget`,
+        ],
+      );
     }
 
     const [selected, ...rest] = candidates;
@@ -87,14 +122,16 @@ export class OptionSelectionService {
       optionType,
       status: OptionSelectionStatus.SELECTED,
       confidence: this.computeConfidence(selected, candidates, signal),
+      maxBudget,
       underlyingPrice,
       selectedContract: selected,
       alternatives,
       reasoning: [
         `Signal engine returned ${signal.signal}`,
         `${optionType} contracts were evaluated against an underlying price of ${underlyingPrice}`,
-        `${candidates.length} contract(s) qualified; the top candidate scored ${selected.score} of ${MAX_SCORE}`,
+        `${candidates.length} contract(s) qualified within the $${maxBudget} maximum trade budget; the top candidate scored ${selected.score} of ${MAX_SCORE}`,
         `Selected ${selected.symbol}: ${selected.moneyness}, ${selected.daysToExpiration} DTE, delta ${selected.delta ?? 'n/a'}`,
+        `Estimated cost $${selected.estimatedContractCost} from ${selected.premiumPriceSource} price ${selected.premiumPriceUsed}`,
       ],
       riskFlags: selectionRiskFlags(selected, executionReady),
       executionReady,
@@ -170,7 +207,9 @@ function isExecutionReady(candidate: OptionCandidate): boolean {
   if (
     !candidate.quoteAvailable ||
     candidate.bid === null ||
-    candidate.ask === null
+    candidate.ask === null ||
+    candidate.premiumPriceSource === 'LAST_PRICE' ||
+    candidate.premiumPriceSource === 'UNAVAILABLE'
   ) {
     return false;
   }
@@ -200,6 +239,7 @@ function noSelection(
   signal: SignalResult,
   optionType: OptionType | null,
   underlyingPrice: number | null,
+  maxBudget: number,
   reasoning: string[],
 ): OptionSelectionResult {
   return {
@@ -209,6 +249,7 @@ function noSelection(
     optionType,
     status: OptionSelectionStatus.NO_SELECTION,
     confidence: 0,
+    maxBudget,
     underlyingPrice,
     selectedContract: null,
     alternatives: [],

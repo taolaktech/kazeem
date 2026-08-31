@@ -23,16 +23,23 @@ import type {
   OptionCandidate,
   OptionScoreBreakdown,
 } from './interfaces/option-candidate-score.interface.js';
+import {
+  isWithinBudget,
+  resolvePremium,
+  type PremiumPriceSource,
+} from './premium-pricing.js';
 
 /** Scores one contract against the underlying price. Never mutates its input. */
 export function scoreCandidate(
   contract: OptionContract,
   underlyingPrice: number,
+  maxBudget: number,
 ): OptionCandidate {
   const strikeDistancePercent =
     Math.abs(contract.strikePrice - underlyingPrice) / underlyingPrice;
   const quoteAvailable = hasTwoSidedQuote(contract);
   const dataCompleteness = completenessOf(contract);
+  const pricing = resolvePremium(contract);
   const spreadPercent = quoteAvailable ? contract.bidAskSpreadPercent : null;
 
   const breakdown: OptionScoreBreakdown = {
@@ -68,11 +75,20 @@ export function scoreCandidate(
     gamma: contract.gamma,
     theta: contract.theta,
     vega: contract.vega,
+    premiumPriceUsed: pricing.premiumPriceUsed,
+    premiumPriceSource: pricing.premiumPriceSource,
+    estimatedContractCost: pricing.estimatedContractCost,
+    withinBudget: isWithinBudget(pricing, maxBudget),
     score: round(sum(breakdown), 2),
     scoreBreakdown: roundBreakdown(breakdown),
     quoteAvailable,
     dataCompleteness: round(dataCompleteness, 2),
-    riskFlags: candidateRiskFlags(contract, quoteAvailable, spreadPercent),
+    riskFlags: candidateRiskFlags(
+      contract,
+      quoteAvailable,
+      spreadPercent,
+      pricing.premiumPriceSource,
+    ),
   };
 }
 
@@ -188,8 +204,14 @@ function candidateRiskFlags(
   contract: OptionContract,
   quoteAvailable: boolean,
   spreadPercent: number | null,
+  premiumPriceSource: PremiumPriceSource,
 ): string[] {
   const flags: string[] = [];
+  if (premiumPriceSource === 'LAST_PRICE') {
+    flags.push(
+      'Budget eligibility estimated from last trade price; current ask unavailable.',
+    );
+  }
   if (contract.daysToExpiration <= 0) {
     flags.push('0DTE contract with elevated theta and gamma risk');
   }

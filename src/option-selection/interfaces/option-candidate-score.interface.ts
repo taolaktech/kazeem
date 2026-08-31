@@ -1,5 +1,6 @@
 import type { OptionType } from '../../options-data/enums/option-type.enum.js';
 import type { Moneyness } from '../enums/option-selection-status.enum.js';
+import type { PremiumPriceSource } from '../premium-pricing.js';
 
 /** Points awarded per scoring dimension; the sum is the candidate's score. */
 export interface OptionScoreBreakdown {
@@ -33,6 +34,10 @@ export interface OptionCandidate {
   gamma: number | null;
   theta: number | null;
   vega: number | null;
+  premiumPriceUsed: number | null;
+  premiumPriceSource: PremiumPriceSource;
+  estimatedContractCost: number | null;
+  withinBudget: boolean;
   score: number;
   scoreBreakdown: OptionScoreBreakdown;
   /** True only when both sides of a real bid/ask quote are present. */

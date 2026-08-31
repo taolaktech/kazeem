@@ -1,3 +1,9 @@
+/** Shares represented by one standard US equity option contract. */
+export const CONTRACT_MULTIPLIER = 100;
+
+/** Upper bound accepted for a single-position budget, in dollars. */
+export const MAX_ACCEPTED_BUDGET = 1_000_000;
+
 /** Candidate filters applied before any contract is scored. */
 export const SELECTION_FILTERS = {
   minDaysToExpiration: 0,
