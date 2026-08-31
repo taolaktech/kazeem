@@ -7,6 +7,7 @@ import { OptionSelectionModule } from './option-selection/option-selection.modul
 import { OptionsDataModule } from './options-data/options-data.module.js';
 import { RegimeModule } from './regime/regime.module.js';
 import { SignalModule } from './signal/signal.module.js';
+import { VolatilityIntelligenceModule } from './volatility-intelligence/volatility-intelligence.module.js';
 
 @Module({
   imports: [
@@ -16,6 +17,7 @@ import { SignalModule } from './signal/signal.module.js';
     SignalModule,
     OptionSelectionModule,
     NewsIntelligenceModule,
+    VolatilityIntelligenceModule,
   ],
   controllers: [AppController],
   providers: [AppService],

@@ -8,8 +8,8 @@ export interface MassiveAggregate {
   l: number;
   /** Close. */
   c: number;
-  /** Volume. */
-  v: number;
+  /** Volume. Index aggregates carry no volume. */
+  v?: number;
   /** Volume weighted average price. */
   vw?: number;
   /** Bar start, Unix milliseconds. */
@@ -41,7 +41,7 @@ export function isMassiveAggregate(value: unknown): value is MassiveAggregate {
     typeof candidate.h === 'number' &&
     typeof candidate.l === 'number' &&
     typeof candidate.c === 'number' &&
-    typeof candidate.v === 'number' &&
+    (typeof candidate.v === 'number' || candidate.v === undefined) &&
     typeof candidate.t === 'number'
   );
 }

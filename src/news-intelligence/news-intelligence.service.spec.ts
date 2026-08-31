@@ -17,6 +17,17 @@ function serviceWith(...providers: NewsProvider[]): NewsIntelligenceService {
 }
 
 describe('NewsIntelligenceService', () => {
+  /** Recency and same-session weighting are clock-driven, so pin the clock
+   * to a regular-session Friday afternoon instead of the wall clock. */
+  beforeEach(() => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-08-28T18:00:00Z'));
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
   it('returns normalized articles from Massive alone', async () => {
     const service = serviceWith(
       stubProvider('massive', [

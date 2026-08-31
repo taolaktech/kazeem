@@ -40,7 +40,9 @@ export function normalizeAggregates(
 }
 
 function toCandle(aggregate: MassiveAggregate): MarketCandle | undefined {
-  const { o: open, h: high, l: low, c: close, v: volume, t } = aggregate;
+  const { o: open, h: high, l: low, c: close, t } = aggregate;
+  /** Index bars are quoted without volume; they are still valid candles. */
+  const volume = aggregate.v ?? 0;
 
   if (![open, high, low, close, volume, t].every(Number.isFinite)) {
     return undefined;
