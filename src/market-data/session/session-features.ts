@@ -196,15 +196,21 @@ export function buildPreviousSessionContext(
   };
 }
 
+/**
+ * `candles` is the capped analytical working set. `sessionOpen` carries the
+ * real 09:30 open of the day, which stays a valid reference level even once
+ * the session has produced more candles than the working set holds.
+ */
 export function buildCurrentSessionFeatures(
   candles: readonly MarketCandle[],
   premarket: PremarketContext,
+  sessionOpen: number | null = null,
 ): CurrentSessionFeatures {
   if (candles.length === 0) {
     return EMPTY_CURRENT_SESSION_FEATURES;
   }
 
-  const open = candles[0].open;
+  const open = sessionOpen ?? candles[0].open;
   const close = candles[candles.length - 1].close;
   const high = Math.max(...candles.map((candle) => candle.high));
   const low = Math.min(...candles.map((candle) => candle.low));

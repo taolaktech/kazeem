@@ -16,7 +16,11 @@ export interface MassiveConfig {
 export interface MarketSessionConfig {
   /** Aggregation of the candles the regime and signal engines run on. */
   primaryTimeframeMinutes: number;
-  /** Upper bound on indicator history; never a minimum before evaluating. */
+  /**
+   * Hard cap on the analytical working set — both the indicator window and the
+   * current-session candles. Opening range, premarket and previous-session
+   * levels stay preserved outside it. Never a minimum before evaluating.
+   */
   maxIndicatorCandles: number;
   /** Minutes after the 09:30 ET open during which trades are not evaluated. */
   openingSettlementMinutes: number;

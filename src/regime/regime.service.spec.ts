@@ -344,4 +344,82 @@ describe('RegimeService', () => {
     ];
     expect(numbers.every((value) => Number.isFinite(value))).toBe(true);
   });
+
+  describe('working-set cap and data sufficiency', () => {
+    it.each([80, 130, 300])(
+      'never reports more than 80 working candles for a %i-candle session',
+      (count) => {
+        const snapshot = buildSessionSnapshot({
+          atHour: 16,
+          atMinute: 30,
+          currentCandles: count,
+        });
+
+        const result = service.classifySession('SPY', snapshot);
+
+        expect(result.sessionContext?.currentSessionCandleCount).toBe(
+          Math.min(count, 80),
+        );
+        expect(result.currentSessionFeatures?.candleCount).toBe(
+          Math.min(count, 80),
+        );
+        expect(result.dataQuality.candleCount).toBeLessThanOrEqual(80);
+      },
+    );
+
+    it('treats a full 80-candle working set as sufficient data', () => {
+      const result = service.classifySession(
+        'SPY',
+        buildSessionSnapshot({ atHour: 16, atMinute: 30, currentCandles: 130 }),
+      );
+
+      expect(result.dataQuality.candleCount).toBe(80);
+      expect(result.dataQuality.sufficientData).toBe(true);
+      expect(
+        result.dataQuality.warnings.some((warning) =>
+          warning.includes('are recommended'),
+        ),
+      ).toBe(false);
+    });
+
+    it('stays sufficient outside trading hours, when evaluation is blocked', () => {
+      const result = service.classifySession(
+        'SPY',
+        buildSessionSnapshot({ atHour: 9, atMinute: 39, currentCandles: 3 }),
+      );
+
+      expect(result.tradeEvaluationAllowed).toBe(false);
+      expect(result.dataQuality.sufficientData).toBe(true);
+    });
+
+    it('warns and reports insufficient data on genuinely short history', async () => {
+      const result = await service.classify(
+        'SPY',
+        rangeBoundCandles().slice(-70),
+      );
+
+      expect(result.dataQuality.candleCount).toBe(70);
+      expect(result.dataQuality.sufficientData).toBe(false);
+      expect(
+        result.dataQuality.warnings.some((warning) =>
+          warning.includes('Only 70 completed candles'),
+        ),
+      ).toBe(true);
+    });
+
+    it('preserves the opening range late in a truncated session', () => {
+      const snapshot = buildSessionSnapshot({
+        atHour: 16,
+        atMinute: 30,
+        currentCandles: 130,
+      });
+
+      const result = service.classifySession('SPY', snapshot);
+
+      expect(result.openingRange?.status).toBe('COMPLETE');
+      expect(result.openingRange?.candleCount).toBe(5);
+      expect(result.premarketContext).toBeDefined();
+      expect(result.previousSessionContext?.available).toBe(true);
+    });
+  });
 });

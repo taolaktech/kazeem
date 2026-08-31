@@ -425,4 +425,117 @@ describe('session partitioning', () => {
     expect(numbers.length).toBeGreaterThan(0);
     expect(numbers.every((value) => Number.isFinite(value))).toBe(true);
   });
+
+  describe('working-set cap', () => {
+    /** A full trading day is 130 completed 3-minute regular-session candles. */
+    function fullDay(count = 130): MarketCandle[] {
+      return candleSeries(SESSION_OPEN, count, {
+        timeframeMinutes: TIMEFRAME,
+        startPrice: 110,
+        step: 0.1,
+      });
+    }
+
+    const afterClose = easternInstant(2026, 8, 28, 16, 30);
+
+    it('keeps all candles when the session has exactly the maximum', () => {
+      const snapshot = partition(fullDay(80), afterClose);
+
+      expect(snapshot.context.currentSessionCandleCount).toBe(80);
+      expect(snapshot.currentSessionCandles).toHaveLength(80);
+      expect(snapshot.currentSessionFeatures.candleCount).toBe(80);
+    });
+
+    it.each([81, 130, 300])(
+      'caps a %i-candle session to the most recent 80',
+      (count) => {
+        const session = fullDay(count).slice(0, count);
+        const snapshot = partition(session, afterClose);
+
+        expect(snapshot.context.currentSessionCandleCount).toBe(80);
+        expect(snapshot.context.indicatorCandleCount).toBe(80);
+        expect(snapshot.currentSessionCandles).toHaveLength(80);
+        expect(snapshot.currentSessionFeatures.candleCount).toBe(80);
+      },
+    );
+
+    it('uses the capped candles for the analytics, not just the metadata', () => {
+      const session = fullDay(130);
+      const snapshot = partition(session, afterClose);
+      const working = session.slice(-80);
+
+      expect(snapshot.currentSessionCandles[0].timestamp).toEqual(
+        working[0].timestamp,
+      );
+      expect(snapshot.currentSessionFeatures.high).toBe(
+        Math.max(...working.map((candle) => candle.high)),
+      );
+      expect(snapshot.currentSessionFeatures.low).toBe(
+        Math.min(...working.map((candle) => candle.low)),
+      );
+      expect(snapshot.currentSessionFeatures.bullishCandleCount).toBe(
+        working.filter((candle) => candle.close > candle.open).length,
+      );
+      expect(snapshot.warnings).toContainEqual(
+        expect.stringContaining('outside the 80-candle working set'),
+      );
+    });
+
+    it('keeps the real session open as preserved context after truncation', () => {
+      const session = fullDay(130);
+      const snapshot = partition(session, afterClose);
+
+      expect(snapshot.currentSessionFeatures.open).toBe(session[0].open);
+    });
+
+    it('keeps the opening range correct once the session exceeds the cap', () => {
+      const session = fullDay(130);
+      const early = partition(session, easternInstant(2026, 8, 28, 10, 0));
+      const late = partition(session, afterClose);
+      const openingCandles = session.slice(0, 5);
+
+      expect(late.openingRange.status).toBe('COMPLETE');
+      expect(late.openingRange.high).toBe(early.openingRange.high);
+      expect(late.openingRange.low).toBe(early.openingRange.low);
+      expect(late.openingRange.high).toBe(
+        Math.max(...openingCandles.map((candle) => candle.high)),
+      );
+      expect(late.openingRange.low).toBe(
+        Math.min(...openingCandles.map((candle) => candle.low)),
+      );
+    });
+
+    it('keeps premarket and previous-session context after truncation', () => {
+      const snapshot = partition(
+        [
+          ...previousSession(),
+          candleAt(easternInstant(2026, 8, 28, 8, 0), {
+            open: 105,
+            close: 106,
+          }),
+          ...fullDay(130),
+        ],
+        afterClose,
+      );
+
+      expect(snapshot.premarket.available).toBe(true);
+      expect(snapshot.premarket.candleCount).toBe(1);
+      expect(snapshot.previousSession.available).toBe(true);
+      expect(snapshot.previousSession.date).toBe('2026-08-27');
+      expect(snapshot.context.currentSessionCandleCount).toBe(80);
+      expect(snapshot.context.previousSessionWarmupCandleCount).toBe(0);
+    });
+
+    it('still reports an established session when the day is truncated', () => {
+      const snapshot = partition(
+        fullDay(130),
+        easternInstant(2026, 8, 28, 15, 0),
+      );
+
+      expect(snapshot.context.sessionMaturity).toBe(
+        SessionMaturity.ESTABLISHED,
+      );
+      expect(snapshot.context.tradeEvaluationAllowed).toBe(true);
+    });
+  });
 });

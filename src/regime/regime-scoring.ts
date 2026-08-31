@@ -1,4 +1,9 @@
-import { MARKET_REGIMES, MarketRegime } from './enums/market-regime.enum.js';
+import {
+  MARKET_REGIMES,
+  MarketRegime,
+  TREND_REGIMES,
+  VOLATILITY_REGIMES,
+} from './enums/market-regime.enum.js';
 import type { IndicatorSnapshot } from './interfaces/indicator-features.interface.js';
 import {
   ADX_RANGE_THRESHOLD,
@@ -18,6 +23,7 @@ import {
   RANGE_WEIGHTS,
   RSI_BEARISH_THRESHOLD,
   RSI_BULLISH_THRESHOLD,
+  TREND_PRIORITY_MIN_SCORE,
   TREND_WEIGHTS,
 } from './regime.constants.js';
 
@@ -280,4 +286,67 @@ function signal(
 
 function round(value: number): number {
   return Math.round(value * 100) / 100;
+}
+
+export interface RegimeSelection {
+  regime: MarketRegime;
+  /** Set when a trend regime outscored the winner but failed the ADX gate. */
+  suppressedTrend?: { regime: MarketRegime; score: number; adx: number };
+}
+
+/**
+ * Highest score wins, with two guards: a trend regime needs directional
+ * strength (ADX >= ADX_RANGE_THRESHOLD) to be eligible at all, and a
+ * volatility regime never overrides a strongly supported trend — volatility
+ * then only shows up in the secondary characteristics.
+ *
+ * The first guard is why a lower-scoring RANGE_BOUND can win over a
+ * higher-scoring trend regime, so the suppressed trend is reported back for
+ * the reasoning output. Exact ties fall back to MARKET_REGIMES order.
+ */
+export function selectPrimaryRegime(
+  scores: Record<MarketRegime, number>,
+  adxFeature: number | undefined,
+): RegimeSelection {
+  const adx = adxFeature ?? 0;
+  const trendEligible = adx >= ADX_RANGE_THRESHOLD;
+  const candidates = trendEligible
+    ? MARKET_REGIMES
+    : MARKET_REGIMES.filter((regime) => !TREND_REGIMES.includes(regime));
+  const bestTrend = bestOf(scores, TREND_REGIMES);
+  const suppressedTrend =
+    !trendEligible && scores[bestTrend] > 0
+      ? { regime: bestTrend, score: scores[bestTrend], adx }
+      : undefined;
+
+  const leader = rankRegimes(scores, candidates)[0];
+  if (!VOLATILITY_REGIMES.includes(leader)) {
+    return { regime: leader, suppressedTrend };
+  }
+  const regime =
+    trendEligible &&
+    adx >= ADX_TREND_THRESHOLD &&
+    scores[bestTrend] >= TREND_PRIORITY_MIN_SCORE
+      ? bestTrend
+      : leader;
+  return { regime, suppressedTrend };
+}
+
+function rankRegimes(
+  scores: Record<MarketRegime, number>,
+  candidates: readonly MarketRegime[],
+): MarketRegime[] {
+  return [...candidates].sort((left, right) => {
+    const difference = scores[right] - scores[left];
+    return difference !== 0
+      ? difference
+      : MARKET_REGIMES.indexOf(left) - MARKET_REGIMES.indexOf(right);
+  });
+}
+
+function bestOf(
+  scores: Record<MarketRegime, number>,
+  candidates: readonly MarketRegime[],
+): MarketRegime {
+  return [...candidates].sort((left, right) => scores[right] - scores[left])[0];
 }
