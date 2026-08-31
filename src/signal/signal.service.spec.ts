@@ -1,5 +1,6 @@
 import { Test, type TestingModule } from '@nestjs/testing';
 import { MarketRegime } from '../regime/enums/market-regime.enum.js';
+import { RegimeService } from '../regime/regime.service.js';
 import { MarketSignal } from './enums/market-signal.enum.js';
 import { SignalService } from './signal.service.js';
 import {
@@ -11,12 +12,28 @@ import {
 
 describe('SignalService', () => {
   let service: SignalService;
+  const classifySymbol = vi.fn();
 
   beforeEach(async () => {
+    classifySymbol.mockReset();
     const moduleRef: TestingModule = await Test.createTestingModule({
-      providers: [SignalService],
+      providers: [
+        SignalService,
+        { provide: RegimeService, useValue: { classifySymbol } },
+      ],
     }).compile();
     service = moduleRef.get(SignalService);
+  });
+
+  it('classifies a symbol then derives its signal', async () => {
+    classifySymbol.mockResolvedValue(
+      buildRegime({ primaryRegime: MarketRegime.TRENDING_BULLISH }),
+    );
+
+    const result = await service.getSignalForSymbol('SPY', 500);
+
+    expect(classifySymbol).toHaveBeenCalledWith('SPY', 500);
+    expect(result.symbol).toBe('SPY');
   });
 
   it('returns BULLISH when trend, EMAs, ADX and RSI align', () => {
