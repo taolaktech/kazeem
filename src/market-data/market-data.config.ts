@@ -1,4 +1,5 @@
 import { registerAs } from '@nestjs/config';
+import { DEFAULT_BREAKOUT_TOLERANCE_PERCENT } from './session/opening-range.js';
 
 export const MASSIVE_CONFIG_KEY = 'massive';
 export const MARKET_SESSION_CONFIG_KEY = 'marketSession';
@@ -19,6 +20,10 @@ export interface MarketSessionConfig {
   maxIndicatorCandles: number;
   /** Minutes after the 09:30 ET open during which trades are not evaluated. */
   openingSettlementMinutes: number;
+  /** Minutes after the 09:30 ET open that define the opening range. */
+  openingRangeMinutes: number;
+  /** Percent of price a close must clear an opening-range boundary by. */
+  openingRangeBreakoutTolerancePercent: number;
 }
 
 function readNumber(value: string | undefined, fallback: number): number {
@@ -72,6 +77,11 @@ export const marketSessionConfig = registerAs(
       openingSettlementMinutes: readNumber(
         process.env.OPENING_SETTLEMENT_MINUTES,
         15,
+      ),
+      openingRangeMinutes: readNumber(process.env.OPENING_RANGE_MINUTES, 15),
+      openingRangeBreakoutTolerancePercent: readNumber(
+        process.env.OPENING_RANGE_BREAKOUT_TOLERANCE_PERCENT,
+        DEFAULT_BREAKOUT_TOLERANCE_PERCENT,
       ),
     };
   },

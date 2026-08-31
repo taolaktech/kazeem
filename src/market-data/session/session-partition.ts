@@ -17,6 +17,7 @@ import {
   resolveSessionMaturity,
 } from './session-maturity.js';
 import type { MarketSessionSnapshot } from './session-context.interface.js';
+import { buildOpeningRangeContext } from './opening-range.js';
 
 export interface PartitionOptions {
   symbol: string;
@@ -25,6 +26,9 @@ export interface PartitionOptions {
   /** Upper bound on the indicator window; not a minimum before evaluating. */
   maxIndicatorCandles: number;
   openingSettlementMinutes: number;
+  /** Minutes after the 09:30 ET open that define the opening range. */
+  openingRangeMinutes?: number;
+  openingRangeBreakoutTolerancePercent?: number;
 }
 
 /**
@@ -119,6 +123,15 @@ export function partitionSessionCandles(
     currentSessionCandles,
     premarket,
   );
+  const openingRangeMinutes =
+    options.openingRangeMinutes ?? openingSettlementMinutes;
+  const openingRange = buildOpeningRangeContext(currentSessionCandles, {
+    now,
+    sessionDate,
+    timeframeMinutes,
+    windowMinutes: openingRangeMinutes,
+    breakoutTolerancePercent: options.openingRangeBreakoutTolerancePercent,
+  });
 
   const marketSession = resolveMarketSession(now, openingSettlementMinutes);
   const sessionMaturity = resolveSessionMaturity(
@@ -156,11 +169,13 @@ export function partitionSessionCandles(
       indicatorCandleCount: indicatorCandles.length,
       previousSessionWarmupCandleCount,
       premarketCandleCount: premarketCandles.length,
+      openingRangeMinutes,
     },
     indicatorCandles,
     currentSessionCandles,
     premarketCandles,
     premarket,
+    openingRange,
     previousSession,
     currentSessionFeatures,
     warnings,

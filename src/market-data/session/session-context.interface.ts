@@ -66,6 +66,61 @@ export interface CurrentSessionFeatures {
   belowPremarketLow: boolean | null;
 }
 
+/** Lifecycle of the opening range within the current trading day. */
+export type OpeningRangeStatus = 'FORMING' | 'COMPLETE' | 'UNAVAILABLE';
+
+export type OpeningRangePosition = 'ABOVE' | 'INSIDE' | 'BELOW' | 'UNKNOWN';
+
+export type OpeningRangeBreakoutStrength =
+  'NONE' | 'WEAK' | 'MODERATE' | 'STRONG';
+
+export type OpeningRangeVolumeConfirmation =
+  'CONFIRMED' | 'NOT_CONFIRMED' | 'UNKNOWN';
+
+/**
+ * The 09:30–09:45 ET reference levels, built only from completed regular
+ * session candles inside that window. Distinct from both premarket context
+ * and the running session high/low: these levels freeze once the window ends.
+ */
+export interface OpeningRangeContext {
+  available: boolean;
+  status: OpeningRangeStatus;
+  /** New York wall-clock bounds of the window, as HH:MM. */
+  startTime: string;
+  endTime: string;
+  windowMinutes: number;
+  candleCount: number;
+  /** Completed candles the window is expected to contain once it closes. */
+  expectedCandleCount: number;
+  open: number | null;
+  high: number | null;
+  low: number | null;
+  close: number | null;
+  volume: number | null;
+  range: number | null;
+  rangePercent: number | null;
+  currentPrice: number | null;
+  currentPricePosition: OpeningRangePosition;
+  distanceFromHighPercent: number | null;
+  distanceFromLowPercent: number | null;
+  /** Percent of price treated as a meaningful move beyond a range boundary. */
+  breakoutTolerancePercent: number;
+  breakoutAbove: boolean;
+  breakdownBelow: boolean;
+  /** Completed post-range candles that closed beyond the respective level. */
+  closesAboveHigh: number;
+  closesBelowLow: number;
+  /** Traded through a level but the completed candle closed back inside. */
+  failedBreakoutAbove: boolean;
+  failedBreakdownBelow: boolean;
+  breakoutStrength: OpeningRangeBreakoutStrength;
+  volumeConfirmation: OpeningRangeVolumeConfirmation;
+  /** Breakout-candle volume relative to the average opening-range candle. */
+  relativeBreakoutVolume: number | null;
+  /** Completed candles after the window that are available so far. */
+  postRangeCandleCount: number;
+}
+
 export interface SessionSnapshotContext {
   timezone: string;
   marketSession: MarketSession;
@@ -79,6 +134,8 @@ export interface SessionSnapshotContext {
   indicatorCandleCount: number;
   previousSessionWarmupCandleCount: number;
   premarketCandleCount: number;
+  /** Length of the opening-range window, in minutes after the 09:30 open. */
+  openingRangeMinutes: number;
 }
 
 /**
@@ -95,6 +152,7 @@ export interface MarketSessionSnapshot {
   currentSessionCandles: MarketCandle[];
   premarketCandles: MarketCandle[];
   premarket: PremarketContext;
+  openingRange: OpeningRangeContext;
   previousSession: PreviousSessionContext;
   currentSessionFeatures: CurrentSessionFeatures;
   warnings: string[];

@@ -90,6 +90,9 @@ export class MarketDataService {
       timeframeMinutes: this.sessionConfig.primaryTimeframeMinutes,
       maxIndicatorCandles,
       openingSettlementMinutes: this.sessionConfig.openingSettlementMinutes,
+      openingRangeMinutes: this.sessionConfig.openingRangeMinutes,
+      openingRangeBreakoutTolerancePercent:
+        this.sessionConfig.openingRangeBreakoutTolerancePercent,
     });
 
     this.logger.log(

@@ -110,6 +110,7 @@ export class SignalService {
         currentSessionCandleCount:
           regime.sessionContext?.currentSessionCandleCount,
         indicatorCandleCount: regime.sessionContext?.indicatorCandleCount,
+        openingRange: regime.openingRange,
       },
       riskFlags,
     };
