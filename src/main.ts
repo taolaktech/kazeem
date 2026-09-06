@@ -2,7 +2,11 @@ import { ValidationPipe } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
 import { AppModule } from './app.module.js';
 
-const DEFAULT_CORS_ORIGINS = ['http://localhost:5173'];
+const DEFAULT_CORS_ORIGINS = [
+  'http://localhost:5173',
+  'https://lightworktrading.site',
+  'https://www.lightworktrading.site',
+];
 
 /** Comma-separated `CORS_ORIGINS`; `*` allows any origin. */
 function corsOrigins(): string[] | '*' {

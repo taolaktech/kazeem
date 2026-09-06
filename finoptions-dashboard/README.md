@@ -30,7 +30,17 @@ npm run dev                                    # http://localhost:5173
 | --- | --- | --- |
 | `VITE_API_BASE_URL` | `http://localhost:3000` | Base URL of the NestJS API |
 
-The backend reads `CORS_ORIGINS` (comma-separated) and allows `http://localhost:5173` by default.
+Vite resolves this at **build time**, per mode:
+
+- `npm run dev` reads `.env` (copied from `.env.example`) → local API.
+- `npm run build` reads `.env.production` → the deployed API.
+
+Either can be overridden by exporting `VITE_API_BASE_URL` in the build
+environment. A dashboard served over https must point at an https API, or the
+browser blocks the request as mixed content.
+
+The backend reads `CORS_ORIGINS` (comma-separated) and allows the dev server
+plus the deployed dashboard origins by default.
 
 ## Scripts
 
